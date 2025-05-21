@@ -27,7 +27,7 @@ app.set('views', __dirname + '/views');
 
 // Add a dashboard route to render the UI:
 app.get('/dashboard', async (req, res) => {
-  // Load some data if you like, e.g., products count
+
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
   res.render('dashboard', { productCount: count });
 });
@@ -37,9 +37,6 @@ app.use(express.static(__dirname + '/public'));
 // -- Raw body parser for webhooks
 app.use('/webhook/orders/create', bodyParser.raw({ type: 'application/json' }));
 
-// ------------------------------------------------------------------
-// STEP 1: OAuth Install Redirect
-// ------------------------------------------------------------------
 
 app.get('/', (req, res) => {
   const shop = req.query.shop;
@@ -56,7 +53,7 @@ app.get('/', (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// STEP 2: OAuth Callback
+//  OAuth Callback
 //   - validate HMAC
 //   - exchange code → access_token
 //   - persist to DB
@@ -86,7 +83,6 @@ app.get('/callback', async (req, res) => {
   }
 
   try {
-    // 2) Exchange code for permanent access token
     const tokenRes = await axios.post(
       `https://${shop}/admin/oauth/access_token`,
       qs.stringify({
@@ -98,7 +94,6 @@ app.get('/callback', async (req, res) => {
     );
     const accessToken = tokenRes.data.access_token;
 
-    // 3) Fetch store information
     const storeInfo = await axios.get(
       `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/shop.json`,
       {
@@ -110,7 +105,6 @@ app.get('/callback', async (req, res) => {
     const shopData = storeInfo.data.shop;
     console.log(shopData);
 
-    // 4) Save shop & info to DB
     await db.execute(
       `INSERT INTO installed_shops (
         shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
@@ -153,7 +147,6 @@ app.get('/callback', async (req, res) => {
       ]
     );
 
-    // 4) Fetch existing webhooks
     const existing = await axios.get(
       `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
       { headers: { 'X-Shopify-Access-Token': accessToken } }
@@ -163,7 +156,6 @@ app.get('/callback', async (req, res) => {
       wh.address === `${NGROK_URL}/webhook/orders/create`
     );
 
-    // 5) Register if missing
     if (!hasOrderWebhook) {
       await axios.post(
         `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
@@ -199,7 +191,6 @@ app.get('/seed-products', async (req, res) => {
       ['SKU-GRN-03', 'Green Hoodie', 'Cozy green hoodie', `${baseUrl}/images/green-hoodie.jpg`, 39.99],
     ];
 
-    // INSERT IGNORE skips any row whose sku already exists
     await db.query(
       `INSERT IGNORE INTO products
          (sku, title, description, image_url, price)
@@ -215,7 +206,7 @@ app.get('/seed-products', async (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// STEP 3: Sync Local Products to Shopify
+// Sync Local Products to Shopify
 // ------------------------------------------------------------------
 app.get('/sync-products', async (req, res) => {
   try {
@@ -228,11 +219,9 @@ app.get('/sync-products', async (req, res) => {
     const shopDomain = installed.shop;
     const accessToken = installed.access_token;
 
-    // 2) Read local products
     const [rows] = await db.execute('SELECT * FROM products');
     if (rows.length === 0) return res.send('No products to sync.');
 
-    // 3) Push each to Shopify
     await Promise.all(
       rows.map(product =>
         axios.post(
@@ -263,7 +252,7 @@ app.get('/sync-products', async (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// STEP 6: Fetch Orders from Shopify & Store in DB
+// Fetch Orders from Shopify & Store in DB
 // ------------------------------------------------------------------
 app.get('/fetch-orders', async (req, res) => {
   try {
@@ -396,10 +385,8 @@ app.get('/fetch-orders', async (req, res) => {
   }
 });
 
-
-
 // ------------------------------------------------------------------
-// STEP 5: Start Server
+// Start Server
 // ------------------------------------------------------------------
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
