@@ -17,10 +17,10 @@ const NGROK_URL = process.env.NGROK_URL;
 
 // MySQL DB pool
 const db = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: '',
-  database: 'productmerge'
+  host: 'srv871.hstgr.io',
+  user: 'u510451310_productmerge',
+  password: 'U510451310_productmerge',
+  database: 'u510451310_productmerge'
 });
 app.set('view engine', 'ejs');
 app.set('views', __dirname + '/views');
@@ -36,7 +36,6 @@ app.get('/dashboard', async (req, res) => {
 app.use(express.static(__dirname + '/public'));
 // -- Raw body parser for webhooks
 app.use('/webhook/orders/create', bodyParser.raw({ type: 'application/json' }));
-
 
 app.get('/', (req, res) => {
   const shop = req.query.shop;
