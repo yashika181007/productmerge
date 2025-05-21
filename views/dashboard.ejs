@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shopify App Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 2rem; }
+    button { margin: 0.5rem; padding: 0.5rem 1rem; font-size: 1rem; }
+    #output { margin-top: 1rem; white-space: pre-wrap; border: 1px solid #ccc; padding: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>App Dashboard</h1>
+  <p>Local products in DB: <strong><%= productCount %></strong></p>
+
+  <button id="seed">Seed Dummy Products</button>
+  <button id="sync">Sync Products to Shopify</button>
+  <button id="fetch">Fetch Orders from Shopify</button>
+
+  <div id="output"></div>
+
+  <script>
+    async function callApi(path) {
+      const res = await fetch(path);
+      const text = await res.text();
+      document.getElementById('output').innerText = text;
+    }
+
+    document.getElementById('seed').onclick = () => callApi('/seed-products');
+    document.getElementById('sync').onclick = () => callApi('/sync-products');
+    document.getElementById('fetch').onclick = () => callApi('/fetch-orders');
+  </script>
+</body>
+</html>
