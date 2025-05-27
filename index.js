@@ -101,6 +101,7 @@ app.get('/callback', async (req, res) => {
 
     if (rows.length > 0) {
       userId = rows[0].id;
+      console.log(userId);
     } else {
       try {
         const [insertUserResult] = await db.execute(
@@ -108,6 +109,7 @@ app.get('/callback', async (req, res) => {
           [shopData.email, shopData.shop_owner]
         );
         userId = insertUserResult.insertId;
+        console.error('User insert sucessfull');
       } catch (insertErr) {
         console.error('User insert failed:', insertErr.message);
         return res.send('Failed to insert user.');
