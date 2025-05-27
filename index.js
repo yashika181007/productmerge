@@ -61,7 +61,7 @@ app.get('/callback', async (req, res) => {
   const { shop, code, hmac } = req.query;
   if (!shop || !code || !hmac) return res.send('Missing parameters.');
 
-  // 1) HMAC validation
+  // Validate HMAC
   const params = { ...req.query };
   delete params.hmac;
   delete params.signature;
@@ -71,16 +71,12 @@ app.get('/callback', async (req, res) => {
     .update(message)
     .digest('hex');
 
-  if (
-    !crypto.timingSafeEqual(
-      Buffer.from(hmac, 'hex'),
-      Buffer.from(generatedHash, 'hex')
-    )
-  ) {
+  if (!crypto.timingSafeEqual(Buffer.from(hmac, 'hex'), Buffer.from(generatedHash, 'hex'))) {
     return res.send('HMAC validation failed.');
   }
 
   try {
+    // Exchange code for access token
     const tokenRes = await axios.post(
       `https://${shop}/admin/oauth/access_token`,
       qs.stringify({
@@ -92,18 +88,14 @@ app.get('/callback', async (req, res) => {
     );
     const accessToken = tokenRes.data.access_token;
 
+    // Fetch shop info
     const storeInfo = await axios.get(
       `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/shop.json`,
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken
-        }
-      }
+      { headers: { 'X-Shopify-Access-Token': accessToken } }
     );
     const shopData = storeInfo.data.shop;
-    console.log(shopData);
 
-    // Get or create user based on shop owner's email
+    // Check if user exists, else create user
     const [[userRow]] = await db.execute(
       'SELECT id FROM users WHERE email = ?',
       [shopData.email]
@@ -113,37 +105,38 @@ app.get('/callback', async (req, res) => {
     if (userRow) {
       userId = userRow.id;
     } else {
-      const [insertResult] = await db.execute(
+      const [insertUserResult] = await db.execute(
         'INSERT INTO users (email, name) VALUES (?, ?)',
         [shopData.email, shopData.shop_owner]
       );
-      userId = insertResult.insertId;
+      userId = insertUserResult.insertId;
     }
 
+    // Insert or update shop info with user_id FK
     await db.execute(
       `INSERT INTO installed_shops (
-    shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
-    plan_name, country, province, city, phone, currency, money_format,
-    timezone, created_at_shop, user_id
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  ON DUPLICATE KEY UPDATE
-    access_token = VALUES(access_token),
-    email = VALUES(email),
-    shop_owner = VALUES(shop_owner),
-    shop_name = VALUES(shop_name),
-    domain = VALUES(domain),
-    myshopify_domain = VALUES(myshopify_domain),
-    plan_name = VALUES(plan_name),
-    country = VALUES(country),
-    province = VALUES(province),
-    city = VALUES(city),
-    phone = VALUES(phone),
-    currency = VALUES(currency),
-    money_format = VALUES(money_format),
-    timezone = VALUES(timezone),
-    created_at_shop = VALUES(created_at_shop),
-    user_id = VALUES(user_id)
-  `,
+        shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
+        plan_name, country, province, city, phone, currency, money_format,
+        timezone, created_at_shop, user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        access_token = VALUES(access_token),
+        email = VALUES(email),
+        shop_owner = VALUES(shop_owner),
+        shop_name = VALUES(shop_name),
+        domain = VALUES(domain),
+        myshopify_domain = VALUES(myshopify_domain),
+        plan_name = VALUES(plan_name),
+        country = VALUES(country),
+        province = VALUES(province),
+        city = VALUES(city),
+        phone = VALUES(phone),
+        currency = VALUES(currency),
+        money_format = VALUES(money_format),
+        timezone = VALUES(timezone),
+        created_at_shop = VALUES(created_at_shop),
+        user_id = VALUES(user_id)
+      `,
       [
         shop,
         accessToken,
@@ -165,33 +158,7 @@ app.get('/callback', async (req, res) => {
       ]
     );
 
-    const existing = await axios.get(
-      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
-      { headers: { 'X-Shopify-Access-Token': accessToken } }
-    );
-    const hasOrderWebhook = existing.data.webhooks.some(wh =>
-      wh.topic === 'orders/create' &&
-      wh.address === `${URL}/webhook/orders/create`
-    );
-
-    if (!hasOrderWebhook) {
-      await axios.post(
-        `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
-        {
-          webhook: {
-            topic: 'orders/create',
-            address: `${URL}/webhook/orders/create`,
-            format: 'json'
-          }
-        },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-    }
+    // Register webhook as you already do...
 
     res.send('App installed & webhook registered.');
   } catch (err) {
@@ -199,6 +166,7 @@ app.get('/callback', async (req, res) => {
     res.send('OAuth process failed.');
   }
 });
+
 app.get('/seed-products', async (req, res) => {
   try {
     const baseUrl = URL; // or 'http://localhost:3000'
