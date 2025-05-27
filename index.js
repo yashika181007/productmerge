@@ -96,20 +96,22 @@ app.get('/callback', async (req, res) => {
     const shopData = storeInfo.data.shop;
 
     // Check if user exists, else create user
-    const [[userRow]] = await db.execute(
-      'SELECT id FROM users WHERE email = ?',
-      [shopData.email]
-    );
-
+    const [rows] = await db.execute('SELECT id FROM users WHERE email = ?', [shopData.email]);
     let userId;
-    if (userRow) {
-      userId = userRow.id;
+
+    if (rows.length > 0) {
+      userId = rows[0].id;
     } else {
-      const [insertUserResult] = await db.execute(
-        'INSERT INTO users (email, name) VALUES (?, ?)',
-        [shopData.email, shopData.shop_owner]
-      );
-      userId = insertUserResult.insertId;
+      try {
+        const [insertUserResult] = await db.execute(
+          'INSERT INTO users (email, name) VALUES (?, ?)',
+          [shopData.email, shopData.shop_owner]
+        );
+        userId = insertUserResult.insertId;
+      } catch (insertErr) {
+        console.error('User insert failed:', insertErr.message);
+        return res.send('Failed to insert user.');
+      }
     }
 
     // Insert or update shop info with user_id FK
