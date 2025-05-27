@@ -1,4 +1,4 @@
-require('dotenv').config();
+URLrequire('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const mysql = require('mysql2/promise');
@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION;
-const NGROK_URL = process.env.NGROK_URL;
+const URL = process.env.URL;
 
 // MySQL DB pool
 const db = mysql.createPool({
@@ -32,7 +32,6 @@ app.get('/dashboard', async (req, res) => {
   res.render('dashboard', { productCount: count });
 });
 
-// Serve static assets (CSS/JS):
 app.use(express.static(__dirname + '/public'));
 // -- Raw body parser for webhooks
 app.use('/webhook/orders/create', bodyParser.raw({ type: 'application/json' }));
@@ -41,7 +40,7 @@ app.get('/', (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.send('Missing shop parameter.');
 
-  const redirectUri = `${NGROK_URL}/callback`;
+  const redirectUri = `${URL}/callback`;
   const installUrl =
     `https://${shop}/admin/oauth/authorize` +
     `?client_id=${SHOPIFY_API_KEY}` +
@@ -152,7 +151,7 @@ app.get('/callback', async (req, res) => {
     );
     const hasOrderWebhook = existing.data.webhooks.some(wh =>
       wh.topic === 'orders/create' &&
-      wh.address === `${NGROK_URL}/webhook/orders/create`
+      wh.address === `${URL}/webhook/orders/create`
     );
 
     if (!hasOrderWebhook) {
@@ -161,7 +160,7 @@ app.get('/callback', async (req, res) => {
         {
           webhook: {
             topic: 'orders/create',
-            address: `${NGROK_URL}/webhook/orders/create`,
+            address: `${URL}/webhook/orders/create`,
             format: 'json'
           }
         },
@@ -182,7 +181,7 @@ app.get('/callback', async (req, res) => {
 });
 app.get('/seed-products', async (req, res) => {
   try {
-    const baseUrl = NGROK_URL; // or 'http://localhost:3000'
+    const baseUrl = URL; // or 'http://localhost:3000'
     const dummy = [
       // [sku,        title,        description,             image_url,                  price]
       ['SKU-RED-01', 'Red T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],
