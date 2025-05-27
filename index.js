@@ -103,28 +103,47 @@ app.get('/callback', async (req, res) => {
     const shopData = storeInfo.data.shop;
     console.log(shopData);
 
+    // Get or create user based on shop owner's email
+    const [[userRow]] = await db.execute(
+      'SELECT id FROM users WHERE email = ?',
+      [shopData.email]
+    );
+
+    let userId;
+    if (userRow) {
+      userId = userRow.id;
+    } else {
+      const [insertResult] = await db.execute(
+        'INSERT INTO users (email, name) VALUES (?, ?)',
+        [shopData.email, shopData.shop_owner]
+      );
+      userId = insertResult.insertId;
+    }
+
     await db.execute(
       `INSERT INTO installed_shops (
-        shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
-        plan_name, country, province, city, phone, currency, money_format, timezone, created_at_shop
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        access_token = VALUES(access_token),
-        email = VALUES(email),
-        shop_owner = VALUES(shop_owner),
-        shop_name = VALUES(shop_name),
-        domain = VALUES(domain),
-        myshopify_domain = VALUES(myshopify_domain),
-        plan_name = VALUES(plan_name),
-        country = VALUES(country),
-        province = VALUES(province),
-        city = VALUES(city),
-        phone = VALUES(phone),
-        currency = VALUES(currency),
-        money_format = VALUES(money_format),
-        timezone = VALUES(timezone),
-        created_at_shop = VALUES(created_at_shop)
-      `,
+    shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
+    plan_name, country, province, city, phone, currency, money_format,
+    timezone, created_at_shop, user_id
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON DUPLICATE KEY UPDATE
+    access_token = VALUES(access_token),
+    email = VALUES(email),
+    shop_owner = VALUES(shop_owner),
+    shop_name = VALUES(shop_name),
+    domain = VALUES(domain),
+    myshopify_domain = VALUES(myshopify_domain),
+    plan_name = VALUES(plan_name),
+    country = VALUES(country),
+    province = VALUES(province),
+    city = VALUES(city),
+    phone = VALUES(phone),
+    currency = VALUES(currency),
+    money_format = VALUES(money_format),
+    timezone = VALUES(timezone),
+    created_at_shop = VALUES(created_at_shop),
+    user_id = VALUES(user_id)
+  `,
       [
         shop,
         accessToken,
@@ -141,7 +160,8 @@ app.get('/callback', async (req, res) => {
         shopData.currency,
         shopData.money_format,
         shopData.iana_timezone,
-        shopData.created_at
+        shopData.created_at,
+        userId
       ]
     );
 

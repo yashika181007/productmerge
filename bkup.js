@@ -307,3 +307,126 @@ app.get('/fetch-orders', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+app.get('/callback', async (req, res) => {
+  const { shop, code, hmac } = req.query;
+  if (!shop || !code || !hmac) return res.send('Missing parameters.');
+
+  // 1) HMAC validation
+  const params = { ...req.query };
+  delete params.hmac;
+  delete params.signature;
+  const message = new URLSearchParams(params).toString();
+  const generatedHash = crypto
+    .createHmac('sha256', SHOPIFY_API_SECRET)
+    .update(message)
+    .digest('hex');
+
+  if (
+    !crypto.timingSafeEqual(
+      Buffer.from(hmac, 'hex'),
+      Buffer.from(generatedHash, 'hex')
+    )
+  ) {
+    return res.send('HMAC validation failed.');
+  }
+
+  try {
+    const tokenRes = await axios.post(
+      `https://${shop}/admin/oauth/access_token`,
+      qs.stringify({
+        client_id: SHOPIFY_API_KEY,
+        client_secret: SHOPIFY_API_SECRET,
+        code
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    const accessToken = tokenRes.data.access_token;
+
+    const storeInfo = await axios.get(
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/shop.json`,
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken
+        }
+      }
+    );
+    const shopData = storeInfo.data.shop;
+    console.log(shopData);
+
+    await db.execute(
+      `INSERT INTO installed_shops (
+        shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
+        plan_name, country, province, city, phone, currency, money_format, timezone, created_at_shop
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        access_token = VALUES(access_token),
+        email = VALUES(email),
+        shop_owner = VALUES(shop_owner),
+        shop_name = VALUES(shop_name),
+        domain = VALUES(domain),
+        myshopify_domain = VALUES(myshopify_domain),
+        plan_name = VALUES(plan_name),
+        country = VALUES(country),
+        province = VALUES(province),
+        city = VALUES(city),
+        phone = VALUES(phone),
+        currency = VALUES(currency),
+        money_format = VALUES(money_format),
+        timezone = VALUES(timezone),
+        created_at_shop = VALUES(created_at_shop)
+      `,
+      [
+        shop,
+        accessToken,
+        shopData.email,
+        shopData.shop_owner,
+        shopData.name,
+        shopData.domain,
+        shopData.myshopify_domain,
+        shopData.plan_name,
+        shopData.country_name,
+        shopData.province,
+        shopData.city,
+        shopData.phone,
+        shopData.currency,
+        shopData.money_format,
+        shopData.iana_timezone,
+        shopData.created_at
+      ]
+    );
+
+    const existing = await axios.get(
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
+      { headers: { 'X-Shopify-Access-Token': accessToken } }
+    );
+    const hasOrderWebhook = existing.data.webhooks.some(wh =>
+      wh.topic === 'orders/create' &&
+      wh.address === `${URL}/webhook/orders/create`
+    );
+
+    if (!hasOrderWebhook) {
+      await axios.post(
+        `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
+        {
+          webhook: {
+            topic: 'orders/create',
+            address: `${URL}/webhook/orders/create`,
+            format: 'json'
+          }
+        },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+    }
+
+    res.send('App installed & webhook registered.');
+  } catch (err) {
+    console.error('OAuth callback error:', err.response?.data || err.message);
+    res.send('OAuth process failed.');
+  }
+});
