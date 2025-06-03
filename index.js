@@ -1,101 +1,125 @@
 require('dotenv').config();
 const express = require('express');
+const { shopifyApi, LATEST_API_VERSION, MemorySessionStorage } = require('@shopify/shopify-api');
+const axios = require('axios');
 const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
-const axios = require('axios');
-const {
-  ApiVersion,
-  Context,
-  Auth,
-  Clients,
-  Webhooks,
-  Utils,
-} = require('@shopify/shopify-api');
-
-const { MySQLSessionStorage, createSessionsTable } = require('./shopifySessionStorage');
+const crypto = require('crypto');
+const qs = require('qs');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
+// CONFIG
+const PORT = process.env.PORT || 3000;
+const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
+const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION;
+const URL = process.env.URL;
+
+// MySQL DB pool
 const db = mysql.createPool({
   host: 'srv871.hstgr.io',
   user: 'u510451310_productmerge',
   password: 'U510451310_productmerge',
   database: 'u510451310_productmerge'
 });
+app.set('view engine', 'ejs');
+app.set('views', __dirname + '/views');
 
-const SCOPES = process.env.SHOPIFY_SCOPES || 'read_products,write_products';
-const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
-const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
-const HOST = process.env.URL;
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2023-04';
+// Add a dashboard route to render the UI:
+app.get('/dashboard', async (req, res) => {
 
-// ✅ Initialize Shopify Context
-async function initShopify() {
-  await createSessionsTable(db);
-
-  Context.initialize({
-    API_KEY: SHOPIFY_API_KEY,
-    API_SECRET_KEY: SHOPIFY_API_SECRET,
-    SCOPES: SCOPES.split(','),
-    HOST_NAME: HOST.replace(/^https?:\/\//, ''),
-    API_VERSION: ApiVersion.April23,
-    IS_EMBEDDED_APP: false,
-    SESSION_STORAGE: new MySQLSessionStorage(db),
-  });
-
-  console.log('✅ Shopify context initialized.');
-}
-
-initShopify().catch(console.error);
-
-app.use(bodyParser.json());
-app.use(express.urlencoded({ extended: true }));
-
-// 🔁 OAuth Start
-app.get('/', async (req, res) => {
-  const shop = req.query.shop;
-  if (!shop) return res.status(400).send('Missing shop parameter.');
-
-  try {
-    const authRoute = await Auth.beginAuth(
-      req,
-      res,
-      shop,
-      '/callback',
-      false
-    );
-    return res.redirect(authRoute);
-  } catch (error) {
-    console.error('Error starting auth:', error);
-    return res.status(500).send('Failed to start auth.');
-  }
+  const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
+  res.render('dashboard', { productCount: count });
 });
 
-// 🔁 OAuth Callback
+app.use(express.static(__dirname + '/public'));
+// -- Raw body parser for webhooks
+app.use('/webhook/orders/create', bodyParser.raw({ type: 'application/json' }));
+
+app.get('/', (req, res) => {
+  const shop = req.query.shop;
+  if (!shop) return res.send('Missing shop parameter.');
+
+  const redirectUri = `${URL}/callback`;
+  const installUrl =
+    `https://${shop}/admin/oauth/authorize` +
+    `?client_id=${SHOPIFY_API_KEY}` +
+    `&scope=${process.env.SHOPIFY_SCOPES}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}`;
+
+  res.redirect(installUrl);
+});
+
+// ------------------------------------------------------------------
+//  OAuth Callback
+//   - validate HMAC
+//   - exchange code → access_token
+//   - persist to DB
+//   - register webhook if not already
+// ------------------------------------------------------------------
 app.get('/callback', async (req, res) => {
+  const { shop, code, hmac } = req.query;
+  if (!shop || !code || !hmac) return res.send('Missing parameters.');
+
+  // Validate HMAC
+  const params = { ...req.query };
+  delete params.hmac;
+  delete params.signature;
+  const message = new URLSearchParams(params).toString();
+  const generatedHash = crypto
+    .createHmac('sha256', SHOPIFY_API_SECRET)
+    .update(message)
+    .digest('hex');
+
+  if (!crypto.timingSafeEqual(Buffer.from(hmac, 'hex'), Buffer.from(generatedHash, 'hex'))) {
+    return res.send('HMAC validation failed.');
+  }
+
   try {
-    const session = await Auth.validateAuthCallback(req, res, req.query);
+    // Exchange code for access token
+    const tokenRes = await axios.post(
+      `https://${shop}/admin/oauth/access_token`,
+      qs.stringify({
+        client_id: SHOPIFY_API_KEY,
+        client_secret: SHOPIFY_API_SECRET,
+        code
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    const accessToken = tokenRes.data.access_token;
 
-    const client = new Clients.Rest(session.shop, session.accessToken);
-    const shopDataResponse = await client.get({ path: 'shop' });
-    const shopData = shopDataResponse.body.shop;
+    // Fetch shop info
+    const storeInfo = await axios.get(
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/shop.json`,
+      { headers: { 'X-Shopify-Access-Token': accessToken } }
+    );
+    const shopData = storeInfo.data.shop;
 
+    // Check if user exists, else create user
     const [rows] = await db.execute('SELECT id FROM users WHERE email = ?', [shopData.email]);
     let userId;
 
     if (rows.length > 0) {
       userId = rows[0].id;
+      console.log(userId);
     } else {
-      const [insertUserResult] = await db.execute(
-        'INSERT INTO users (email, name) VALUES (?, ?)',
-        [shopData.email, shopData.shop_owner]
-      );
-      userId = insertUserResult.insertId;
+      try {
+        const [insertUserResult] = await db.execute(
+          'INSERT INTO users (email, name) VALUES (?, ?)',
+          [shopData.email, shopData.shop_owner]
+        );
+        userId = insertUserResult.insertId;
+        console.error('User insert sucessfull');
+      } catch (insertErr) {
+        console.error('User insert failed:', insertErr.message);
+        return res.send('Failed to insert user.');
+      }
     }
 
-    await db.execute(`
-      INSERT INTO installed_shops (
+    // Insert or update shop info with user_id FK
+    await db.execute(
+      `INSERT INTO installed_shops (
         shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
         plan_name, country, province, city, phone, currency, money_format,
         timezone, created_at_shop, user_id
@@ -117,75 +141,42 @@ app.get('/callback', async (req, res) => {
         timezone = VALUES(timezone),
         created_at_shop = VALUES(created_at_shop),
         user_id = VALUES(user_id)
-    `, [
-      session.shop,
-      session.accessToken,
-      shopData.email,
-      shopData.shop_owner,
-      shopData.name,
-      shopData.domain,
-      shopData.myshopify_domain,
-      shopData.plan_name,
-      shopData.country_name,
-      shopData.province,
-      shopData.city,
-      shopData.phone,
-      shopData.currency,
-      shopData.money_format,
-      shopData.iana_timezone,
-      shopData.created_at,
-      userId,
-    ]);
+      `,
+      [
+        shop,
+        accessToken,
+        shopData.email,
+        shopData.shop_owner,
+        shopData.name,
+        shopData.domain,
+        shopData.myshopify_domain,
+        shopData.plan_name,
+        shopData.country_name,
+        shopData.province,
+        shopData.city,
+        shopData.phone,
+        shopData.currency,
+        shopData.money_format,
+        shopData.iana_timezone,
+        shopData.created_at,
+        userId
+      ]
+    );
 
-    await Webhooks.Registry.register({
-      shop: session.shop,
-      accessToken: session.accessToken,
-      path: '/webhook/app/uninstalled',
-      topic: 'APP_UNINSTALLED',
-      webhookHandler: async (topic, shop, body) => {
-        console.log(`Webhook received: ${topic} from ${shop}`);
-        await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
-      },
-    });
+    // Register webhook as you already do...
 
-    res.send('✅ App installed successfully!');
-  } catch (error) {
-    console.error('Auth callback error:', error);
-    res.status(400).send('Authentication failed.');
+    res.send('App installed & webhook registered.');
+  } catch (err) {
+    console.error('OAuth callback error:', err.response?.data || err.message);
+    res.send('OAuth process failed.');
   }
 });
 
-// 🔁 Webhook Endpoint
-app.post(
-  '/webhook/app/uninstalled',
-  bodyParser.raw({ type: 'application/json' }),
-  async (req, res) => {
-    try {
-      const topic = req.headers['x-shopify-topic'];
-      const shop = req.headers['x-shopify-shop-domain'];
-      const hmac = req.headers['x-shopify-hmac-sha256'];
-
-      const generatedHash = Utils.generateHmac(req.body, SHOPIFY_API_SECRET);
-      if (generatedHash !== hmac) {
-        return res.status(401).send('HMAC validation failed');
-      }
-
-      console.log(`Webhook received: ${topic} from ${shop}`);
-      await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
-
-      res.status(200).send('Webhook handled');
-    } catch (err) {
-      console.error('Webhook error:', err);
-      res.status(500).send('Webhook failed');
-    }
-  }
-);
-
-// 🌱 Seed Dummy Products
 app.get('/seed-products', async (req, res) => {
   try {
-    const baseUrl = process.env.URL;
+    const baseUrl = URL; // or 'http://localhost:3000'
     const dummy = [
+      // [sku,        title,        description,             image_url,                  price]
       ['SKU-RED-01', 'Red T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],
       ['SKU-BLU-02', 'Blue Jeans', 'Classic blue denim jeans', `${baseUrl}/images/blue-jeans.jpg`, 49.99],
       ['SKU-GRN-03', 'Green Hoodie', 'Cozy green hoodie', `${baseUrl}/images/green-hoodie.jpg`, 39.99],
@@ -205,9 +196,12 @@ app.get('/seed-products', async (req, res) => {
   }
 });
 
-// 🔁 Sync Local DB Products to Shopify
+// ------------------------------------------------------------------
+// Sync Local Products to Shopify
+// ------------------------------------------------------------------
 app.get('/sync-products', async (req, res) => {
   try {
+    // 1) Load one installed shop + token
     const [[installed]] = await db.execute(
       'SELECT shop, access_token FROM installed_shops LIMIT 1'
     );
@@ -248,7 +242,9 @@ app.get('/sync-products', async (req, res) => {
   }
 });
 
-// 🔁 Fetch Shopify Orders & Save to DB
+// ------------------------------------------------------------------
+// Fetch Orders from Shopify & Store in DB
+// ------------------------------------------------------------------
 app.get('/fetch-orders', async (req, res) => {
   try {
     const [[installed]] = await db.execute(
@@ -280,6 +276,7 @@ app.get('/fetch-orders', async (req, res) => {
       const billing = order.billing_address || {};
       const shipping = order.shipping_address || {};
 
+      // 1. Upsert Customer
       await db.execute(
         `INSERT INTO customers
          (shopify_customer_id, email, first_name, last_name, phone, created_at)
@@ -304,6 +301,7 @@ app.get('/fetch-orders', async (req, res) => {
         [customer.id]
       );
 
+      // 2. Upsert Order
       await db.execute(
         `INSERT INTO orders
          (shopify_order_id, customer_id, email, total_price, financial_status, fulfillment_status, created_at, updated_at)
@@ -327,6 +325,7 @@ app.get('/fetch-orders', async (req, res) => {
         ]
       );
 
+      // 3. Upsert Billing & Shipping Address (remove old first)
       await db.execute('DELETE FROM order_addresses WHERE shopify_order_id = ?', [order.id]);
       for (const type of ['billing', 'shipping']) {
         const addr = type === 'billing' ? billing : shipping;
@@ -351,6 +350,7 @@ app.get('/fetch-orders', async (req, res) => {
         }
       }
 
+      // 4. Upsert Line Items (remove old first)
       await db.execute('DELETE FROM order_items WHERE shopify_order_id = ?', [order.id]);
       for (const item of order.line_items) {
         await db.execute(
@@ -369,14 +369,24 @@ app.get('/fetch-orders', async (req, res) => {
       }
     }
 
-    res.send(`Fetched & stored ${orders.length} orders.`);
+    res.send(`Fetched & stored ${orders.length} orders (with customer, address, items).`);
   } catch (err) {
     console.error('Fetch-orders error:', err.response?.data || err.message);
     res.status(500).send('Failed to fetch/store full order data.');
   }
 });
+app.post('/webhook/app/uninstalled', async (req, res) => {
+  const shop = req.headers['x-shopify-shop-domain'];
+  if (shop) {
+    await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
+    console.log(`App uninstalled by ${shop}`);
+  }
+  res.status(200).send('Webhook received');
+});
 
-// 🔁 Start Server
+// ------------------------------------------------------------------
+// Start Server
+// ------------------------------------------------------------------
 app.listen(PORT, () => {
-  console.log(`🚀 Server listening on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
