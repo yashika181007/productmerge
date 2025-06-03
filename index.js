@@ -28,7 +28,6 @@ const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
 const HOST = process.env.URL; // Your app public URL (https://yourapp.com)
 
-// Initialize Shopify Context with MySQL session storage
 async function initShopify() {
   await createSessionsTable(db);
 
@@ -49,10 +48,8 @@ initShopify().catch(console.error);
 
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
-console.log('Shopify:', Shopify);
 console.log('Auth:', Auth);
 
-// Redirect to Shopify OAuth Install
 app.get('/', async (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.status(400).send('Missing shop parameter.');
