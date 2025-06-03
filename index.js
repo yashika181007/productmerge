@@ -2,7 +2,10 @@ require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
-const { Shopify, ApiVersion } = require('@shopify/shopify-api');
+const ShopifyPackage = require('@shopify/shopify-api');
+const Shopify = ShopifyPackage.Shopify;
+const ApiVersion = ShopifyPackage.ApiVersion;
+
 const { MySQLSessionStorage, createSessionsTable } = require('./shopifySessionStorage');
 
 const app = express();
@@ -41,6 +44,8 @@ initShopify().catch(console.error);
 
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
+console.log('Shopify:', Shopify);
+console.log('Shopify.Auth:', Shopify.Auth);
 
 // Redirect to Shopify OAuth Install
 app.get('/', async (req, res) => {
