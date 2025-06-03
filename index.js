@@ -2,9 +2,14 @@ require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
-const ShopifyPackage = require('@shopify/shopify-api');
-const Shopify = ShopifyPackage.Shopify;
-const ApiVersion = ShopifyPackage.ApiVersion;
+const {
+  ApiVersion,
+  Context,
+  Auth,
+  Clients,
+  Webhooks,
+  Utils
+} = require('@shopify/shopify-api');
 
 const { MySQLSessionStorage, createSessionsTable } = require('./shopifySessionStorage');
 
@@ -27,15 +32,15 @@ const HOST = process.env.URL; // Your app public URL (https://yourapp.com)
 async function initShopify() {
   await createSessionsTable(db);
 
-  Shopify.Context.initialize({
-    API_KEY: SHOPIFY_API_KEY,
-    API_SECRET_KEY: SHOPIFY_API_SECRET,
-    SCOPES: SCOPES.split(','),
-    HOST_NAME: HOST.replace(/^https?:\/\//, ''),
-    API_VERSION: ApiVersion.April23,
-    IS_EMBEDDED_APP: false,
-    SESSION_STORAGE: new MySQLSessionStorage(db),
-  });
+Context.initialize({
+  API_KEY: SHOPIFY_API_KEY,
+  API_SECRET_KEY: SHOPIFY_API_SECRET,
+  SCOPES: SCOPES.split(','),
+  HOST_NAME: HOST.replace(/^https?:\/\//, ''),
+  API_VERSION: ApiVersion.April23,
+  IS_EMBEDDED_APP: false,
+  SESSION_STORAGE: new MySQLSessionStorage(db),
+});
 
   console.log('Shopify context initialized with MySQL session storage.');
 }
@@ -45,7 +50,7 @@ initShopify().catch(console.error);
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 console.log('Shopify:', Shopify);
-console.log('Shopify.Auth:', Shopify.Auth);
+console.log('Auth:', Auth);
 
 // Redirect to Shopify OAuth Install
 app.get('/', async (req, res) => {
@@ -53,7 +58,7 @@ app.get('/', async (req, res) => {
   if (!shop) return res.status(400).send('Missing shop parameter.');
 
   try {
-    const authRoute = await Shopify.Auth.beginAuth(
+    const authRoute = await Auth.beginAuth(
       req,
       res,
       shop,
@@ -70,11 +75,11 @@ app.get('/', async (req, res) => {
 // OAuth Callback
 app.get('/callback', async (req, res) => {
   try {
-    const session = await Shopify.Auth.validateAuthCallback(req, res, req.query); // throws on failure
+    const session = await Auth.validateAuthCallback(req, res, req.query); // throws on failure
     // session: { id, shop, state, isOnline, accessToken, scope }
 
     // Fetch shop info using Shopify API Client
-    const client = new Shopify.Clients.Rest(session.shop, session.accessToken);
+    const client = new Clients.Rest(session.shop, session.accessToken);
     const shopDataResponse = await client.get({
       path: 'shop',
     });
@@ -142,7 +147,7 @@ app.get('/callback', async (req, res) => {
 
     // Register webhook: app/uninstalled
     try {
-      await Shopify.Webhooks.Registry.register({
+      await Webhooks.Registry.register({
         shop: session.shop,
         accessToken: session.accessToken,
         path: '/webhook/app/uninstalled',
@@ -175,7 +180,7 @@ app.post(
       const hmac = req.headers['x-shopify-hmac-sha256'];
 
       // Verify webhook
-      const generatedHash = Shopify.Utils.generateHmac(req.body, SHOPIFY_API_SECRET);
+      const generatedHash = Utils.generateHmac(req.body, SHOPIFY_API_SECRET);
       if (generatedHash !== hmac) {
         return res.status(401).send('HMAC validation failed');
       }
