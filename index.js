@@ -374,6 +374,14 @@ app.get('/fetch-orders', async (req, res) => {
     res.status(500).send('Failed to fetch/store full order data.');
   }
 });
+app.post('/webhook/app/uninstalled', async (req, res) => {
+  const shop = req.headers['x-shopify-shop-domain'];
+  if (shop) {
+    await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
+    console.log(`App uninstalled by ${shop}`);
+  }
+  res.status(200).send('Webhook received');
+});
 
 // ------------------------------------------------------------------
 // Start Server
