@@ -346,34 +346,34 @@ app.get('/sync-products', async (req, res) => {
 // ------------------------------------------------------------------
 // Fetch Orders from Shopify & Store in DB
 // ------------------------------------------------------------------
+// Declare this at the top or outside the route
 const gqlFetchOrders = `
-  {
-    orders(first: 10, sortKey: CREATED_AT, reverse: true) {
-      edges {
-        node {
-          id
-          name
-          createdAt
-          totalPriceSet {
-            shopMoney {
-              amount
-              currencyCode
-            }
+{
+  orders(first: 10, sortKey: CREATED_AT, reverse: true) {
+    edges {
+      node {
+        id
+        name
+        createdAt
+        totalPriceSet {
+          shopMoney {
+            amount
+            currencyCode
           }
-          customer {
-            firstName
-            lastName
-            email
-          }
-          lineItems(first: 5) {
-            edges {
-              node {
-                title
-                quantity
-                originalUnitPriceSet {
-                  shopMoney {
-                    amount
-                  }
+        }
+        customer {
+          firstName
+          lastName
+          email
+        }
+        lineItems(first: 5) {
+          edges {
+            node {
+              title
+              quantity
+              originalUnitPriceSet {
+                shopMoney {
+                  amount
                 }
               }
             }
@@ -382,7 +382,37 @@ const gqlFetchOrders = `
       }
     }
   }
+}
 `;
+
+app.get('/fetch-orders', async (req, res) => {
+  try {
+    const [[installed]] = await db.execute(
+      'SELECT shop, access_token FROM installed_shops LIMIT 1'
+    );
+    if (!installed) return res.status(400).send('No installed shop found.');
+
+    const shopDomain = installed.shop;
+    const accessToken = installed.access_token;
+
+    const response = await axios.post(
+      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+      { query: gqlFetchOrders },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const ordersData = response.data.data.orders.edges.map(edge => edge.node);
+    res.json(ordersData);
+  } catch (err) {
+    console.error('Order fetch failed:', err.response?.data || err.message);
+    res.status(500).send('Failed to fetch orders.');
+  }
+});
 
 app.post('/webhook/app/uninstalled', bodyParser.raw({ type: 'application/json' }), async (req, res) => {
   try {
