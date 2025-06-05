@@ -222,9 +222,7 @@ app.get('/seed-products', async (req, res) => {
 // ------------------------------------------------------------------
 app.get('/sync-products', async (req, res) => {
   try {
-    const [[installed]] = await db.execute(
-      'SELECT shop, access_token FROM installed_shops LIMIT 1'
-    );
+    const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
     if (!installed) return res.status(400).send('No installed shop found.');
 
     const shopDomain = installed.shop;
@@ -234,17 +232,17 @@ app.get('/sync-products', async (req, res) => {
     if (rows.length === 0) return res.send('No products to sync.');
 
     for (const product of rows) {
-      const mutation = `
+      // 1. Create product with title and description only
+      const createProductMutation = `
         mutation {
           productCreate(input: {
             title: "${product.title}",
-            bodyHtml: "${product.description}",
-            images: [{ src: "${product.image_url}" }],
-            variants: [{ price: "${product.price}" }]
+            bodyHtml: "${product.description}"
           }) {
             product {
               id
               title
+              handle
             }
             userErrors {
               field
@@ -254,9 +252,9 @@ app.get('/sync-products', async (req, res) => {
         }
       `;
 
-      const response = await axios.post(
+      const createProductResponse = await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-        { query: mutation },
+        { query: createProductMutation },
         {
           headers: {
             'X-Shopify-Access-Token': accessToken,
@@ -265,14 +263,80 @@ app.get('/sync-products', async (req, res) => {
         }
       );
 
-      const result = response.data;
-      if (result.errors || result.data?.productCreate?.userErrors?.length > 0) {
-        console.error('GraphQL Error:', JSON.stringify(result, null, 2));
-        return res.status(500).send('Failed to sync some products.');
+      const createdProduct = createProductResponse.data.data?.productCreate?.product;
+      const userErrors = createProductResponse.data.data?.productCreate?.userErrors;
+      if (!createdProduct || userErrors?.length) {
+        console.error('Product creation failed:', userErrors);
+        continue;
       }
+
+      const productId = createdProduct.id;
+
+      // 2. Add image
+      const imageMutation = `
+        mutation {
+          productCreateMedia(productId: "${productId}", media: [
+            {
+              originalSource: "${product.image_url}",
+              mediaContentType: IMAGE
+            }
+          ]) {
+            media {
+              alt
+              mediaContentType
+              status
+            }
+            mediaUserErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+
+      await axios.post(
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        { query: imageMutation },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      // 3. Add variant
+      const variantMutation = `
+        mutation {
+          productVariantCreate(input: {
+            productId: "${productId}",
+            price: "${product.price}"
+          }) {
+            productVariant {
+              id
+              price
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+
+      await axios.post(
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        { query: variantMutation },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
     }
 
-    res.send(`Successfully pushed ${rows.length} products to ${shopDomain} using GraphQL.`);
+    res.send(`Successfully synced ${rows.length} products to ${shopDomain}`);
   } catch (err) {
     console.error('Sync error:', err.response?.data || err.message);
     res.status(500).send('Failed to sync products.');
@@ -282,51 +346,43 @@ app.get('/sync-products', async (req, res) => {
 // ------------------------------------------------------------------
 // Fetch Orders from Shopify & Store in DB
 // ------------------------------------------------------------------
-app.get('/fetch-orders', async (req, res) => {
-  try {
-    const [[installed]] = await db.execute(
-      'SELECT shop, access_token FROM installed_shops LIMIT 1'
-    );
-    if (!installed) return res.status(400).send('No installed shop found.');
-
-    const shopDomain = installed.shop;
-    const accessToken = installed.access_token;
-
-    const response = await axios.post(
-      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-      { query: gqlFetchOrders },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json',
+const gqlFetchOrders = `
+  {
+    orders(first: 10, sortKey: CREATED_AT, reverse: true) {
+      edges {
+        node {
+          id
+          name
+          createdAt
+          totalPriceSet {
+            shopMoney {
+              amount
+              currencyCode
+            }
+          }
+          customer {
+            firstName
+            lastName
+            email
+          }
+          lineItems(first: 5) {
+            edges {
+              node {
+                title
+                quantity
+                originalUnitPriceSet {
+                  shopMoney {
+                    amount
+                  }
+                }
+              }
+            }
+          }
         }
       }
-    );
-
-    const ordersData = response.data.data.orders.edges.map(edge => {
-      const order = edge.node;
-      return {
-        id: order.id,
-        name: order.name,
-        createdAt: order.createdAt,
-        total: order.totalPriceSet.shopMoney.amount,
-        currency: order.totalPriceSet.shopMoney.currencyCode,
-        customer: order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'Guest',
-        email: order.customer?.email || 'N/A',
-        items: order.lineItems.edges.map(item => ({
-          title: item.node.title,
-          quantity: item.node.quantity,
-          price: item.node.originalUnitPriceSet.shopMoney.amount
-        }))
-      };
-    });
-
-    res.json(ordersData);
-  } catch (err) {
-    console.error('Order fetch failed:', err.response?.data || err.message);
-    res.status(500).send('Failed to fetch orders.');
+    }
   }
-});
+`;
 
 app.post('/webhook/app/uninstalled', bodyParser.raw({ type: 'application/json' }), async (req, res) => {
   try {
