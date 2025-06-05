@@ -163,7 +163,28 @@ app.get('/callback', async (req, res) => {
       ]
     );
 
-    // Register webhook as you already do...
+    // Register the 'app/uninstalled' webhook
+    try {
+      await axios.post(
+        `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
+        {
+          webhook: {
+            topic: 'app/uninstalled',
+            address: `${URL}/webhook/app/uninstalled`,
+            format: 'json'
+          }
+        },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      console.log('App uninstall webhook registered');
+    } catch (webhookErr) {
+      console.error('Webhook registration failed:', webhookErr.response?.data || webhookErr.message);
+    }
 
     res.send('App installed & webhook registered.');
   } catch (err) {
@@ -375,18 +396,27 @@ app.get('/fetch-orders', async (req, res) => {
     res.status(500).send('Failed to fetch/store full order data.');
   }
 });
-app.post('/webhook/app/uninstalled', async (req, res) => {
+app.post('/webhook/app/uninstalled', bodyParser.raw({ type: 'application/json' }), async (req, res) => {
+  const hmac = req.headers['x-shopify-hmac-sha256'];
+  const generatedHash = crypto
+    .createHmac('sha256', SHOPIFY_API_SECRET)
+    .update(req.body)
+    .digest('base64');
+
+  if (generatedHash !== hmac) {
+    console.warn('HMAC validation failed for uninstall webhook.');
+    return res.status(401).send('Unauthorized');
+  }
+
   const shop = req.headers['x-shopify-shop-domain'];
   if (shop) {
     await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
     console.log(`App uninstalled by ${shop}`);
   }
+
   res.status(200).send('Webhook received');
 });
 
-// ------------------------------------------------------------------
-// Start Server
-// ------------------------------------------------------------------
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
