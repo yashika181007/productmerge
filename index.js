@@ -18,20 +18,20 @@ const URL = process.env.URL;
 
 // MySQL DB pool
 const db = mysql.createPool({
-  host: 'srv871.hstgr.io',
-  user: 'u510451310_productmerge',
-  password: 'U510451310_productmerge',
-  database: 'u510451310_productmerge'
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME
 });
+
 app.set('view engine', 'ejs');
 app.set('views', __dirname + '/views');
 
 // Add a dashboard route to render the UI:
-app.get('/dashboard', async (req, res) => {
-
+app.get('/dashboard', asyncHandler(async (req, res) => {
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
   res.render('dashboard', { productCount: count });
-});
+}));
 
 app.use(express.static(__dirname + '/public'));
 // -- Raw body parser for webhooks
@@ -397,24 +397,36 @@ app.get('/fetch-orders', async (req, res) => {
   }
 });
 app.post('/webhook/app/uninstalled', bodyParser.raw({ type: 'application/json' }), async (req, res) => {
-  const hmac = req.headers['x-shopify-hmac-sha256'];
-  const generatedHash = crypto
-    .createHmac('sha256', SHOPIFY_API_SECRET)
-    .update(req.body)
-    .digest('base64');
+  try {
+    const hmacHeader = req.headers['x-shopify-hmac-sha256'];
+    const rawBody = req.body; // This should be a Buffer
 
-  if (generatedHash !== hmac) {
-    console.warn('HMAC validation failed for uninstall webhook.');
-    return res.status(401).send('Unauthorized');
+    if (!rawBody || !Buffer.isBuffer(rawBody)) {
+      console.warn('Webhook body is missing or not a Buffer.');
+      return res.status(400).send('Invalid webhook payload.');
+    }
+
+    const hash = crypto
+      .createHmac('sha256', SHOPIFY_API_SECRET)
+      .update(rawBody)
+      .digest('base64');
+
+    if (hash !== hmacHeader) {
+      console.warn('HMAC validation failed for uninstall webhook.');
+      return res.status(401).send('Unauthorized');
+    }
+
+    const shop = req.headers['x-shopify-shop-domain'];
+    if (shop) {
+      await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
+      console.log(`App uninstalled by ${shop}`);
+    }
+
+    res.status(200).send('Webhook received');
+  } catch (err) {
+    console.error('Uninstall webhook error:', err.message);
+    res.status(500).send('Webhook processing failed');
   }
-
-  const shop = req.headers['x-shopify-shop-domain'];
-  if (shop) {
-    await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
-    console.log(`App uninstalled by ${shop}`);
-  }
-
-  res.status(200).send('Webhook received');
 });
 
 app.listen(PORT, () => {
