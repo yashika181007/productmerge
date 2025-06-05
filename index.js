@@ -20,7 +20,7 @@ const URL = process.env.URL;
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
-  password: process.env.DB_PASS,
+  password: process.env.DB_PASS, async
   database: process.env.DB_NAME
 });
 
@@ -28,10 +28,10 @@ app.set('view engine', 'ejs');
 app.set('views', __dirname + '/views');
 
 // Add a dashboard route to render the UI:
-app.get('/dashboard', asyncHandler(async (req, res) => {
+app.get('/dashboard', async (req, res) => {
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
   res.render('dashboard', { productCount: count });
-}));
+});
 
 app.use(express.static(__dirname + '/public'));
 // -- Raw body parser for webhooks
@@ -41,7 +41,7 @@ app.get('/', (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.send('Missing shop parameter.');
 
-  const redirectUri = `${URL}/callback`;
+  const redirectUri = `${URL}/callback`;trytr
   const installUrl =
     `https://${shop}/admin/oauth/authorize` +
     `?client_id=${SHOPIFY_API_KEY}` +
