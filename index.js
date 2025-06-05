@@ -41,7 +41,7 @@ app.get('/', (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.send('Missing shop parameter.');
 
-  const redirectUri = `${URL}/callback`; trytr
+  const redirectUri = `${URL}/callback`; 
   const installUrl =
     `https://${shop}/admin/oauth/authorize` +
     `?client_id=${SHOPIFY_API_KEY}` +
