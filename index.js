@@ -20,7 +20,7 @@ const URL = process.env.URL;
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
-  password: process.env.DB_PASS, 
+  password: process.env.DB_PASS,
   database: process.env.DB_NAME
 });
 
@@ -41,7 +41,7 @@ app.get('/', (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.send('Missing shop parameter.');
 
-  const redirectUri = `${URL}/callback`;trytr
+  const redirectUri = `${URL}/callback`; trytr
   const installUrl =
     `https://${shop}/admin/oauth/authorize` +
     `?client_id=${SHOPIFY_API_KEY}` +
@@ -222,7 +222,6 @@ app.get('/seed-products', async (req, res) => {
 // ------------------------------------------------------------------
 app.get('/sync-products', async (req, res) => {
   try {
-    // 1) Load one installed shop + token
     const [[installed]] = await db.execute(
       'SELECT shop, access_token FROM installed_shops LIMIT 1'
     );
@@ -234,29 +233,46 @@ app.get('/sync-products', async (req, res) => {
     const [rows] = await db.execute('SELECT * FROM products');
     if (rows.length === 0) return res.send('No products to sync.');
 
-    await Promise.all(
-      rows.map(product =>
-        axios.post(
-          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/products.json`,
-          {
-            product: {
-              title: product.title,
-              body_html: product.description,
-              images: [{ src: product.image_url }],
-              variants: [{ price: product.price }]
+    for (const product of rows) {
+      const mutation = `
+        mutation {
+          productCreate(input: {
+            title: "${product.title}",
+            bodyHtml: "${product.description}",
+            images: [{ src: "${product.image_url}" }],
+            variants: [{ price: "${product.price}" }]
+          }) {
+            product {
+              id
+              title
             }
-          },
-          {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-              'Content-Type': 'application/json'
+            userErrors {
+              field
+              message
             }
           }
-        )
-      )
-    );
+        }
+      `;
 
-    res.send(`Successfully pushed ${rows.length} products to ${shopDomain}.`);
+      const response = await axios.post(
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        { query: mutation },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const result = response.data;
+      if (result.errors || result.data?.productCreate?.userErrors?.length > 0) {
+        console.error('GraphQL Error:', JSON.stringify(result, null, 2));
+        return res.status(500).send('Failed to sync some products.');
+      }
+    }
+
+    res.send(`Successfully pushed ${rows.length} products to ${shopDomain} using GraphQL.`);
   } catch (err) {
     console.error('Sync error:', err.response?.data || err.message);
     res.status(500).send('Failed to sync products.');
@@ -273,129 +289,45 @@ app.get('/fetch-orders', async (req, res) => {
     );
     if (!installed) return res.status(400).send('No installed shop found.');
 
-    const { shop: shopDomain, access_token: accessToken } = installed;
+    const shopDomain = installed.shop;
+    const accessToken = installed.access_token;
 
-    const ordersRes = await axios.get(
-      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders.json`,
+    const response = await axios.post(
+      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+      { query: gqlFetchOrders },
       {
         headers: {
           'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        },
-        params: {
-          status: 'any',
-          limit: 250
+          'Content-Type': 'application/json',
         }
       }
     );
 
-    const orders = ordersRes.data.orders || [];
-    if (orders.length === 0) return res.send('No orders found.');
+    const ordersData = response.data.data.orders.edges.map(edge => {
+      const order = edge.node;
+      return {
+        id: order.id,
+        name: order.name,
+        createdAt: order.createdAt,
+        total: order.totalPriceSet.shopMoney.amount,
+        currency: order.totalPriceSet.shopMoney.currencyCode,
+        customer: order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'Guest',
+        email: order.customer?.email || 'N/A',
+        items: order.lineItems.edges.map(item => ({
+          title: item.node.title,
+          quantity: item.node.quantity,
+          price: item.node.originalUnitPriceSet.shopMoney.amount
+        }))
+      };
+    });
 
-    for (const order of orders) {
-      const customer = order.customer || {};
-      const billing = order.billing_address || {};
-      const shipping = order.shipping_address || {};
-
-      // 1. Upsert Customer
-      await db.execute(
-        `INSERT INTO customers
-         (shopify_customer_id, email, first_name, last_name, phone, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           email = VALUES(email),
-           first_name = VALUES(first_name),
-           last_name = VALUES(last_name),
-           phone = VALUES(phone)`,
-        [
-          customer.id,
-          customer.email,
-          customer.first_name,
-          customer.last_name,
-          customer.phone,
-          customer.created_at
-        ]
-      );
-
-      const [[custRow]] = await db.execute(
-        `SELECT id FROM customers WHERE shopify_customer_id = ?`,
-        [customer.id]
-      );
-
-      // 2. Upsert Order
-      await db.execute(
-        `INSERT INTO orders
-         (shopify_order_id, customer_id, email, total_price, financial_status, fulfillment_status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           customer_id = VALUES(customer_id),
-           email = VALUES(email),
-           total_price = VALUES(total_price),
-           financial_status = VALUES(financial_status),
-           fulfillment_status = VALUES(fulfillment_status),
-           updated_at = VALUES(updated_at)`,
-        [
-          order.id,
-          custRow.id,
-          order.email,
-          order.total_price,
-          order.financial_status,
-          order.fulfillment_status,
-          order.created_at,
-          order.updated_at
-        ]
-      );
-
-      // 3. Upsert Billing & Shipping Address (remove old first)
-      await db.execute('DELETE FROM order_addresses WHERE shopify_order_id = ?', [order.id]);
-      for (const type of ['billing', 'shipping']) {
-        const addr = type === 'billing' ? billing : shipping;
-        if (Object.keys(addr).length > 0) {
-          await db.execute(
-            `INSERT INTO order_addresses
-             (shopify_order_id, type, name, address1, address2, city, province, country, zip, phone)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              order.id,
-              type,
-              addr.name,
-              addr.address1,
-              addr.address2,
-              addr.city,
-              addr.province,
-              addr.country,
-              addr.zip,
-              addr.phone
-            ]
-          );
-        }
-      }
-
-      // 4. Upsert Line Items (remove old first)
-      await db.execute('DELETE FROM order_items WHERE shopify_order_id = ?', [order.id]);
-      for (const item of order.line_items) {
-        await db.execute(
-          `INSERT INTO order_items
-           (shopify_order_id, product_id, variant_id, title, quantity, price)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [
-            order.id,
-            item.product_id,
-            item.variant_id,
-            item.title,
-            item.quantity,
-            item.price
-          ]
-        );
-      }
-    }
-
-    res.send(`Fetched & stored ${orders.length} orders (with customer, address, items).`);
+    res.json(ordersData);
   } catch (err) {
-    console.error('Fetch-orders error:', err.response?.data || err.message);
-    res.status(500).send('Failed to fetch/store full order data.');
+    console.error('Order fetch failed:', err.response?.data || err.message);
+    res.status(500).send('Failed to fetch orders.');
   }
 });
+
 app.post('/webhook/app/uninstalled', bodyParser.raw({ type: 'application/json' }), async (req, res) => {
   try {
     const hmacHeader = req.headers['x-shopify-hmac-sha256'];
