@@ -9,7 +9,6 @@ const qs = require('qs');
 
 const app = express();
 
-// CONFIG
 const PORT = process.env.PORT || 3000;
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
@@ -26,22 +25,14 @@ const db = mysql.createPool({
 
 app.set('view engine', 'ejs');
 app.set('views', __dirname + '/views');
-
-// Add a dashboard route to render the UI:
-app.get('/dashboard', async (req, res) => {
-  const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
-  res.render('dashboard', { productCount: count });
-});
-
 app.use(express.static(__dirname + '/public'));
-// -- Raw body parser for webhooks
 app.use('/webhook/orders/create', bodyParser.raw({ type: 'application/json' }));
 
 app.get('/', (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.send('Missing shop parameter.');
 
-  const redirectUri = `${URL}/callback`; 
+  const redirectUri = `${URL}/callback`;
   const installUrl =
     `https://${shop}/admin/oauth/authorize` +
     `?client_id=${SHOPIFY_API_KEY}` +
@@ -51,18 +42,10 @@ app.get('/', (req, res) => {
   res.redirect(installUrl);
 });
 
-// ------------------------------------------------------------------
-//  OAuth Callback
-//   - validate HMAC
-//   - exchange code → access_token
-//   - persist to DB
-//   - register webhook if not already
-// ------------------------------------------------------------------
 app.get('/callback', async (req, res) => {
   const { shop, code, hmac } = req.query;
   if (!shop || !code || !hmac) return res.send('Missing parameters.');
 
-  // Validate HMAC
   const params = { ...req.query };
   delete params.hmac;
   delete params.signature;
@@ -77,7 +60,6 @@ app.get('/callback', async (req, res) => {
   }
 
   try {
-    // Exchange code for access token
     const tokenRes = await axios.post(
       `https://${shop}/admin/oauth/access_token`,
       qs.stringify({
@@ -89,35 +71,32 @@ app.get('/callback', async (req, res) => {
     );
     const accessToken = tokenRes.data.access_token;
 
-    // Fetch shop info
     const storeInfo = await axios.get(
       `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/shop.json`,
       { headers: { 'X-Shopify-Access-Token': accessToken } }
     );
     const shopData = storeInfo.data.shop;
 
-    // Check if user exists, else create user
     const [rows] = await db.execute('SELECT id FROM users WHERE email = ?', [shopData.email]);
     let userId;
 
     if (rows.length > 0) {
       userId = rows[0].id;
-      console.log(userId);
     } else {
       try {
+        // ✅ CHANGE: Added dummy password to satisfy NOT NULL constraint
         const [insertUserResult] = await db.execute(
-          'INSERT INTO users (email, name) VALUES (?, ?)',
-          [shopData.email, shopData.shop_owner]
+          'INSERT INTO users (email, name, password) VALUES (?, ?, ?)',
+          [shopData.email, shopData.shop_owner, 'shopify_oauth_user']
         );
         userId = insertUserResult.insertId;
-        console.error('User insert sucessfull');
+        console.log('User insert successful');
       } catch (insertErr) {
         console.error('User insert failed:', insertErr.message);
         return res.send('Failed to insert user.');
       }
     }
 
-    // Insert or update shop info with user_id FK
     await db.execute(
       `INSERT INTO installed_shops (
         shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
@@ -163,29 +142,61 @@ app.get('/callback', async (req, res) => {
       ]
     );
 
-    // Register the 'app/uninstalled' webhook
-    try {
-      await axios.post(
-        `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
-        {
-          webhook: {
-            topic: 'app/uninstalled',
-            address: `${URL}/webhook/app/uninstalled`,
-            format: 'json'
-          }
-        },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          }
+    // GDPR - Customer Data Request
+    await axios.post(
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
+      {
+        webhook: {
+          topic: 'customers/data_request',
+          address: `${URL}/webhook/customers/data_request`,
+          format: 'json'
         }
-      );
-      console.log('App uninstall webhook registered');
-    } catch (webhookErr) {
-      console.error('Webhook registration failed:', webhookErr.response?.data || webhookErr.message);
-    }
+      },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
 
+    // GDPR - Customer Data Erasure
+    await axios.post(
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
+      {
+        webhook: {
+          topic: 'customers/redact',
+          address: `${URL}/webhook/customers/redact`,
+          format: 'json'
+        }
+      },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // GDPR - Shop Data Erasure
+    await axios.post(
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
+      {
+        webhook: {
+          topic: 'shop/redact',
+          address: `${URL}/webhook/shop/redact`,
+          format: 'json'
+        }
+      },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('App uninstall webhook registered');
     res.send('App installed & webhook registered.');
   } catch (err) {
     console.error('OAuth callback error:', err.response?.data || err.message);
@@ -193,20 +204,22 @@ app.get('/callback', async (req, res) => {
   }
 });
 
+app.get('/dashboard', async (req, res) => {
+  const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
+  res.render('dashboard', { productCount: count });
+});
+
 app.get('/seed-products', async (req, res) => {
   try {
-    const baseUrl = URL; // or 'http://localhost:3000'
+    const baseUrl = URL;
     const dummy = [
-      // [sku,        title,        description,             image_url,                  price]
       ['SKU-RED-01', 'Red T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],
       ['SKU-BLU-02', 'Blue Jeans', 'Classic blue denim jeans', `${baseUrl}/images/blue-jeans.jpg`, 49.99],
       ['SKU-GRN-03', 'Green Hoodie', 'Cozy green hoodie', `${baseUrl}/images/green-hoodie.jpg`, 39.99],
     ];
 
     await db.query(
-      `INSERT IGNORE INTO products
-         (sku, title, description, image_url, price)
-       VALUES ?`,
+      `INSERT IGNORE INTO products (sku, title, description, image_url, price) VALUES ?`,
       [dummy]
     );
 
@@ -217,9 +230,6 @@ app.get('/seed-products', async (req, res) => {
   }
 });
 
-// ------------------------------------------------------------------
-// Sync Local Products to Shopify
-// ------------------------------------------------------------------
 app.get('/sync-products', async (req, res) => {
   try {
     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
@@ -232,7 +242,6 @@ app.get('/sync-products', async (req, res) => {
     if (rows.length === 0) return res.send('No products to sync.');
 
     for (const product of rows) {
-      // 1. Create product with title and description only
       const createProductMutation = `
         mutation {
           productCreate(input: {
@@ -242,15 +251,13 @@ app.get('/sync-products', async (req, res) => {
             product {
               id
               title
-              handle
             }
             userErrors {
               field
               message
             }
           }
-        }
-      `;
+        }`;
 
       const createProductResponse = await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
@@ -272,7 +279,6 @@ app.get('/sync-products', async (req, res) => {
 
       const productId = createdProduct.id;
 
-      // 2. Add image
       const imageMutation = `
         mutation {
           productCreateMedia(productId: "${productId}", media: [
@@ -283,7 +289,6 @@ app.get('/sync-products', async (req, res) => {
           ]) {
             media {
               alt
-              mediaContentType
               status
             }
             mediaUserErrors {
@@ -291,8 +296,7 @@ app.get('/sync-products', async (req, res) => {
               message
             }
           }
-        }
-      `;
+        }`;
 
       await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
@@ -305,7 +309,6 @@ app.get('/sync-products', async (req, res) => {
         }
       );
 
-      // 3. Add variant
       const variantMutation = `
         mutation {
           productVariantCreate(input: {
@@ -321,8 +324,7 @@ app.get('/sync-products', async (req, res) => {
               message
             }
           }
-        }
-      `;
+        }`;
 
       await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
@@ -343,10 +345,6 @@ app.get('/sync-products', async (req, res) => {
   }
 });
 
-// ------------------------------------------------------------------
-// Fetch Orders from Shopify & Store in DB
-// ------------------------------------------------------------------
-// Declare this at the top or outside the route
 const gqlFetchOrders = `
 {
   orders(first: 10, sortKey: CREATED_AT, reverse: true) {
@@ -382,25 +380,19 @@ const gqlFetchOrders = `
       }
     }
   }
-}
-`;
+}`;
 
 app.get('/fetch-orders', async (req, res) => {
   try {
-    const [[installed]] = await db.execute(
-      'SELECT shop, access_token FROM installed_shops LIMIT 1'
-    );
+    const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
     if (!installed) return res.status(400).send('No installed shop found.');
 
-    const shopDomain = installed.shop;
-    const accessToken = installed.access_token;
-
     const response = await axios.post(
-      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+      `https://${installed.shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
       { query: gqlFetchOrders },
       {
         headers: {
-          'X-Shopify-Access-Token': accessToken,
+          'X-Shopify-Access-Token': installed.access_token,
           'Content-Type': 'application/json'
         }
       }
@@ -417,10 +409,9 @@ app.get('/fetch-orders', async (req, res) => {
 app.post('/webhook/app/uninstalled', bodyParser.raw({ type: 'application/json' }), async (req, res) => {
   try {
     const hmacHeader = req.headers['x-shopify-hmac-sha256'];
-    const rawBody = req.body; // This should be a Buffer
+    const rawBody = req.body;
 
     if (!rawBody || !Buffer.isBuffer(rawBody)) {
-      console.warn('Webhook body is missing or not a Buffer.');
       return res.status(400).send('Invalid webhook payload.');
     }
 
@@ -430,7 +421,6 @@ app.post('/webhook/app/uninstalled', bodyParser.raw({ type: 'application/json' }
       .digest('base64');
 
     if (hash !== hmacHeader) {
-      console.warn('HMAC validation failed for uninstall webhook.');
       return res.status(401).send('Unauthorized');
     }
 
