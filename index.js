@@ -75,15 +75,59 @@ app.get('/callback', async (req, res) => {
     );
     const shopData = storeInfo.data.shop;
 
-    const [rows] = await db.execute('SELECT id FROM users WHERE email = ?', [shopData.email]);
-    let userId = rows.length > 0 ? rows[0].id : (await db.execute(
-      'INSERT INTO users (email, name, password) VALUES (?, ?, ?)',
-      [shopData.email, shopData.shop_owner, 'shopify_oauth_user']
-    ))[0].insertId;
+    const {
+      email,
+      shop_owner,
+      name: shop_name,
+      domain,
+      myshopify_domain,
+      plan_name,
+      country,
+      province,
+      city,
+      phone,
+      currency,
+      money_format,
+      timezone,
+      created_at,
+    } = shopData;
+
+    const [rows] = await db.execute('SELECT id FROM users WHERE email = ?', [email]);
+    const userId = rows.length > 0
+      ? rows[0].id
+      : (await db.execute(
+        'INSERT INTO users (email, name, password) VALUES (?, ?, ?)',
+        [email, shop_owner, 'shopify_oauth_user']
+      ))[0].insertId;
 
     await db.execute(
-      `INSERT INTO installed_shops (...) VALUES (...) ON DUPLICATE KEY UPDATE ...`,
-      [shop, accessToken, shopData.email, shopData.shop_owner, shopData.name, ...]
+      `INSERT INTO installed_shops (
+    shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
+    plan_name, country, province, city, phone, currency, money_format,
+    timezone, created_at_shop, user_id
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON DUPLICATE KEY UPDATE
+    access_token = VALUES(access_token),
+    email = VALUES(email),
+    shop_owner = VALUES(shop_owner),
+    shop_name = VALUES(shop_name),
+    domain = VALUES(domain),
+    myshopify_domain = VALUES(myshopify_domain),
+    plan_name = VALUES(plan_name),
+    country = VALUES(country),
+    province = VALUES(province),
+    city = VALUES(city),
+    phone = VALUES(phone),
+    currency = VALUES(currency),
+    money_format = VALUES(money_format),
+    timezone = VALUES(timezone),
+    created_at_shop = VALUES(created_at_shop),
+    user_id = VALUES(user_id)`,
+      [
+        shop, accessToken, email, shop_owner, shop_name, domain, myshopify_domain,
+        plan_name, country, province, city, phone, currency, money_format,
+        timezone, created_at, userId
+      ]
     );
 
     const webhookTopics = [
