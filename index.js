@@ -1,19 +1,19 @@
 require('dotenv').config();
 const express = require('express');
-const { shopifyApi, MemorySessionStorage ,LATEST_API_VERSION} = require('@shopify/shopify-api');
-
+const { shopifyApi, MemorySessionStorage, LATEST_API_VERSION } = require('@shopify/shopify-api');
 const axios = require('axios');
 const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const qs = require('qs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-04';
-const URL = process.env.URL;
+const APP_URL = process.env.URL;
 
 const db = mysql.createPool({
   host: process.env.DB_HOST,
@@ -22,15 +22,25 @@ const db = mysql.createPool({
   database: process.env.DB_NAME
 });
 
+const shopify = shopifyApi({
+  apiKey: SHOPIFY_API_KEY,
+  apiSecretKey: SHOPIFY_API_SECRET,
+  scopes: process.env.SHOPIFY_SCOPES.split(','),
+  hostName: new URL(APP_URL).host,
+  isEmbeddedApp: true,
+  apiVersion: LATEST_API_VERSION,
+  sessionStorage: new MemorySessionStorage(),
+});
+
 app.set('view engine', 'ejs');
-app.set('views', __dirname + '/views');
-app.use(express.static(__dirname + '/public'));
-app.use('/webhook/orders/create', bodyParser.raw({ type: 'application/json' }));
+app.set('views', path.join(__dirname, 'views'));
+app.use(express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.raw({ type: 'application/json' }));
+
 function verifyShopifyWebhook(req, res, next) {
   const hmac = req.headers['x-shopify-hmac-sha256'];
-  const body = req.body; // raw body as buffer
-  const secret = process.env.SHOPIFY_API_SECRET;
+  const body = req.body;
+  const secret = SHOPIFY_API_SECRET;
 
   const hash = crypto
     .createHmac('sha256', secret)
@@ -42,7 +52,6 @@ function verifyShopifyWebhook(req, res, next) {
     return res.status(401).send('Unauthorized');
   }
 
-  // If valid, parse body into JSON
   try {
     req.body = JSON.parse(body.toString('utf8'));
   } catch (err) {
@@ -52,23 +61,13 @@ function verifyShopifyWebhook(req, res, next) {
   next();
 }
 
-const shopify = shopifyApi({
-  apiKey: process.env.SHOPIFY_API_KEY,
-  apiSecretKey: process.env.SHOPIFY_API_SECRET,
-  apiVersion: LATEST_API_VERSION,
-  isEmbeddedApp: true,
-  hostName: process.env.DB_HOST,
-  adminApiAccessToken: process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN, // optional
-  // sessionStorage: Your session strategy
-});
-
 async function verifyShopifyToken(req, res, next) {
   try {
     const authHeader = req.headers.authorization || '';
     const token = authHeader.replace('Bearer ', '');
 
     const payload = await shopify.auth.jwt.decodeSessionToken(token);
-    req.shop = payload.dest.replace('https://', ''); // e.g. "your-shop.myshopify.com"
+    req.shop = payload.dest.replace('https://', '');
     req.sessionTokenPayload = payload;
     next();
   } catch (error) {
@@ -76,7 +75,6 @@ async function verifyShopifyToken(req, res, next) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 }
-
 app.get('/', (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.send('Missing shop parameter.');
