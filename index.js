@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
-const { shopifyApi, MemorySessionStorage, LATEST_API_VERSION } = require('@shopify/shopify-api');
+const { shopifyApi, memorySessionStorage } = require('@shopify/shopify-api');
+
 const axios = require('axios');
 const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
@@ -23,13 +24,13 @@ const db = mysql.createPool({
 });
 
 const shopify = shopifyApi({
-  apiKey: SHOPIFY_API_KEY,
-  apiSecretKey: SHOPIFY_API_SECRET,
+  apiKey: process.env.SHOPIFY_API_KEY,
+  apiSecretKey: process.env.SHOPIFY_API_SECRET,
   scopes: process.env.SHOPIFY_SCOPES.split(','),
-  hostName: new URL(APP_URL).host,
+  hostName: new URL(process.env.URL).host,
   isEmbeddedApp: true,
   apiVersion: LATEST_API_VERSION,
-  sessionStorage: new MemorySessionStorage(),
+  sessionStorage: memorySessionStorage(), // ← Correct usage
 });
 
 app.set('view engine', 'ejs');
