@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
+require('@shopify/shopify-api/adapters/node'); // ✅ This fixes the error
 const { shopifyApi, LATEST_API_VERSION  } = require('@shopify/shopify-api');
 const MySQLStore = require('express-mysql-session')(session);
 const axios = require('axios');
