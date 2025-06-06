@@ -63,8 +63,43 @@ app.get('/', (req, res) => {
 
   res.redirect(installUrl);
 });
+async function verifyAccessToken(req, res, next) {
+  const shop = req.query.shop;
 
-app.get('/callback', async (req, res) => {
+  if (!shop) {
+    return res.status(400).send('Missing shop parameter.');
+  }
+
+  try {
+    const [[shopData]] = await db.execute('SELECT access_token FROM installed_shops WHERE shop = ?', [shop]);
+
+    if (!shopData || !shopData.access_token) {
+      return res.status(401).send('Unauthorized: Shop not found or token missing.');
+    }
+
+    // Optional: make a lightweight authenticated request to validate the token
+    try {
+      const test = await axios.get(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/shop.json`, {
+        headers: {
+          'X-Shopify-Access-Token': shopData.access_token
+        }
+      });
+
+      // Attach token to request object if needed later
+      req.shop = shop;
+      req.accessToken = shopData.access_token;
+      next();
+    } catch (err) {
+      console.error('Invalid or expired access token:', err.response?.data || err.message);
+      return res.status(401).send('Unauthorized: Invalid or expired token.');
+    }
+  } catch (err) {
+    console.error('Token verification error:', err.message);
+    res.status(500).send('Server error.');
+  }
+}
+
+app.get('/callback', verifyAccessToken, async (req, res) => {
   const { shop, code, hmac, host } = req.query;
 
   if (!shop || !code || !hmac || !host) return res.send('Missing parameters.');
@@ -185,7 +220,7 @@ app.get('/callback', async (req, res) => {
     res.status(500).send('OAuth process failed.');
   }
 });
-app.get('/apps/shipping-owl', (req, res) => {
+app.get('/apps/shipping-owl', verifyAccessToken, (req, res) => {
   const { shop } = req.query;
 
   // Set proper Content-Security-Policy for embedded apps
@@ -209,12 +244,12 @@ app.post('/webhook/customers/data_request', verifyShopifyWebhook, (req, res) => 
   res.status(200).send('Webhook received');
 });
 
-app.get('/dashboard', async (req, res) => {
+app.get('/dashboard', verifyAccessToken, async (req, res) => {
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
   res.render('dashboard', { productCount: count });
 });
 
-app.get('/seed-products', async (req, res) => {
+app.get('/seed-products', verifyAccessToken, async (req, res) => {
   const baseUrl = URL;
   const dummy = [
     ['SKU-RED-01', 'Red T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],
@@ -225,7 +260,7 @@ app.get('/seed-products', async (req, res) => {
   res.send('Dummy products inserted.');
 });
 
-app.get('/sync-products', async (req, res) => {
+app.get('/sync-products', verifyAccessToken, async (req, res) => {
   const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
   if (!installed) return res.status(400).send('No installed shop.');
 
@@ -316,7 +351,7 @@ app.get('/sync-products', async (req, res) => {
   res.send(`Synced ${products.length} products.`);
 });
 
-app.get('/fetch-orders', async (req, res) => {
+app.get('/fetch-orders', verifyAccessToken, async (req, res) => {
   const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
   const gql = `{
     orders(first: 10, sortKey: CREATED_AT, reverse: true) {
@@ -336,7 +371,7 @@ app.get('/fetch-orders', async (req, res) => {
   res.json(response.data.data.orders.edges.map(edge => edge.node));
 });
 
-app.post('/webhook/app/uninstalled', bodyParser.raw({ type: 'application/json' }), async (req, res) => {
+app.post('/webhook/app/uninstalled', verifyAccessToken, bodyParser.raw({ type: 'application/json' }), async (req, res) => {
   const hmacHeader = req.headers['x-shopify-hmac-sha256'];
   const rawBody = req.body;
   const hash = crypto.createHmac('sha256', SHOPIFY_API_SECRET).update(rawBody).digest('base64');
