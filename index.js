@@ -19,7 +19,13 @@ const APP_URL = process.env.URL;
 
 const ShopifyMySQLSessionStorage = require('./shopify-mysql-session-storage');
 
-const shopifySessionStorage = new ShopifyMySQLSessionStorage(db); // 'db' is your mysql2 pool
+const db = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME
+});
+const shopifySessionStorage = new ShopifyMySQLSessionStorage(db);
 
 const shopify = shopifyApi({
   apiKey: SHOPIFY_API_KEY,
