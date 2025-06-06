@@ -193,19 +193,20 @@ app.get('/apps/shipping-owl', (req, res) => {
 
   res.send(`<h1>Welcome to Shipping Owl for ${shop}</h1>`);
 });
-app.post('/webhook/customers/data_request', (req, res) => {
-  console.log('Data request webhook');
-  res.status(200).send('OK');
+app.post('/webhook/shop/redact', verifyShopifyWebhook, (req, res) => {
+  console.log('✅ SHOP_REDACT webhook verified');
+  // You can access req.body here (already parsed)
+  res.status(200).send('Webhook received');
 });
 
-app.post('/webhook/customers/redact', (req, res) => {
-  console.log('Customer redact webhook');
-  res.status(200).send('OK');
+app.post('/webhook/customers/redact', verifyShopifyWebhook, (req, res) => {
+  console.log('✅ CUSTOMERS_REDACT webhook verified');
+  res.status(200).send('Webhook received');
 });
 
-app.post('/webhook/shop/redact', (req, res) => {
-  console.log('Shop redact webhook');
-  res.status(200).send('OK');
+app.post('/webhook/customers/data_request', verifyShopifyWebhook, (req, res) => {
+  console.log('✅ CUSTOMERS_DATA_REQUEST webhook verified');
+  res.status(200).send('Webhook received');
 });
 
 app.get('/dashboard', async (req, res) => {
