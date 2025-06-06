@@ -30,7 +30,8 @@ const shopify = shopifyApi({
   hostName: new URL(process.env.URL).host,
   isEmbeddedApp: true,
   apiVersion: LATEST_API_VERSION,
-  sessionStorage: memorySessionStorage(), // ← Correct usage
+  sessionStorage: new memorySessionStorage(),
+
 });
 
 app.set('view engine', 'ejs');
