@@ -40,10 +40,6 @@ app.get('/', (req, res) => {
   res.redirect(installUrl);
 });
 
-const crypto = require('crypto');
-const axios = require('axios');
-const qs = require('qs');
-
 app.get('/callback', async (req, res) => {
   const { shop, code, hmac, host } = req.query;
 
