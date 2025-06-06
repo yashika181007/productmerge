@@ -243,21 +243,20 @@ app.get('/sync-products', async (req, res) => {
 
     for (const product of rows) {
       const createProductMutation = `
-        mutation {
-          productCreate(input: {
-            title: "${product.title}",
-            bodyHtml: "${product.description}"
-          }) {
-            product {
-              id
-              title
-            }
-            userErrors {
-              field
-              message
-            }
-          }
-        }`;
+    mutation {
+      productCreate(product: {
+        title: "${product.title.replace(/"/g, '\\"')}"
+      }) {
+        product {
+          id
+          title
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }`;
 
       const createProductResponse = await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
@@ -280,23 +279,23 @@ app.get('/sync-products', async (req, res) => {
       const productId = createdProduct.id;
 
       const imageMutation = `
-        mutation {
-          productCreateMedia(productId: "${productId}", media: [
-            {
-              originalSource: "${product.image_url}",
-              mediaContentType: IMAGE
-            }
-          ]) {
-            media {
-              alt
-              status
-            }
-            mediaUserErrors {
-              field
-              message
-            }
-          }
-        }`;
+    mutation {
+      productCreateMedia(productId: "${productId}", media: [
+        {
+          originalSource: "${product.image_url}",
+          mediaContentType: IMAGE
+        }
+      ]) {
+        media {
+          alt
+          status
+        }
+        mediaUserErrors {
+          field
+          message
+        }
+      }
+    }`;
 
       await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
@@ -309,22 +308,24 @@ app.get('/sync-products', async (req, res) => {
         }
       );
 
+      // ✅ NEW BULK VARIANT MUTATION
       const variantMutation = `
-        mutation {
-          productVariantCreate(input: {
-            productId: "${productId}",
-            price: "${product.price}"
-          }) {
-            productVariant {
-              id
-              price
-            }
-            userErrors {
-              field
-              message
-            }
-          }
-        }`;
+    mutation {
+      productVariantsBulkCreate(productId: "${productId}", variants: [
+        {
+          price: "${product.price}",
+          sku: "${product.sku}"
+        }
+      ]) {
+        product {
+          id
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }`;
 
       await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
