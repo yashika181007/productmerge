@@ -40,16 +40,22 @@ app.get('/', (req, res) => {
   res.redirect(installUrl);
 });
 
-app.get('/callback', async (req, res) => {
-  const { shop, code, hmac } = req.query;
-  if (!shop || !code || !hmac) return res.send('Missing parameters.');
+const crypto = require('crypto');
+const axios = require('axios');
+const qs = require('qs');
 
+app.get('/callback', async (req, res) => {
+  const { shop, code, hmac, host } = req.query;
+
+  if (!shop || !code || !hmac || !host) return res.send('Missing parameters.');
+
+  // HMAC validation
   const params = { ...req.query };
   delete params.hmac;
   delete params.signature;
   const message = new URLSearchParams(params).toString();
   const generatedHash = crypto
-    .createHmac('sha256', SHOPIFY_API_SECRET)
+    .createHmac('sha256', process.env.SHOPIFY_API_SECRET)
     .update(message)
     .digest('hex');
 
@@ -58,78 +64,70 @@ app.get('/callback', async (req, res) => {
   }
 
   try {
+    // Get access token
     const tokenRes = await axios.post(
       `https://${shop}/admin/oauth/access_token`,
       qs.stringify({
-        client_id: SHOPIFY_API_KEY,
-        client_secret: SHOPIFY_API_SECRET,
+        client_id: process.env.SHOPIFY_API_KEY,
+        client_secret: process.env.SHOPIFY_API_SECRET,
         code
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
     const accessToken = tokenRes.data.access_token;
 
+    // Get shop info
     const storeInfo = await axios.get(
-      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/shop.json`,
+      `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/shop.json`,
       { headers: { 'X-Shopify-Access-Token': accessToken } }
     );
     const shopData = storeInfo.data.shop;
 
-    const {
-      email,
-      shop_owner,
-      name: shop_name,
-      domain,
-      myshopify_domain,
-      plan_name,
-      country,
-      province,
-      city,
-      phone,
-      currency,
-      money_format,
-      timezone,
-      created_at,
-    } = shopData;
-
-    const [rows] = await db.execute('SELECT id FROM users WHERE email = ?', [email]);
-    const userId = rows.length > 0
+    // Save user
+    const [rows] = await db.execute('SELECT id FROM users WHERE email = ?', [shopData.email]);
+    let userId = rows.length > 0
       ? rows[0].id
       : (await db.execute(
-        'INSERT INTO users (email, name, password) VALUES (?, ?, ?)',
-        [email, shop_owner, 'shopify_oauth_user']
+        'INSERT INTO users (email, name) VALUES (?, ?)',
+        [shopData.email, shopData.shop_owner]
       ))[0].insertId;
 
+    // Save shop
     await db.execute(
       `INSERT INTO installed_shops (
-    shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
-    plan_name, country, province, city, phone, currency, money_format,
-    timezone, created_at_shop, user_id
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  ON DUPLICATE KEY UPDATE
-    access_token = VALUES(access_token),
-    email = VALUES(email),
-    shop_owner = VALUES(shop_owner),
-    shop_name = VALUES(shop_name),
-    domain = VALUES(domain),
-    myshopify_domain = VALUES(myshopify_domain),
-    plan_name = VALUES(plan_name),
-    country = VALUES(country),
-    province = VALUES(province),
-    city = VALUES(city),
-    phone = VALUES(phone),
-    currency = VALUES(currency),
-    money_format = VALUES(money_format),
-    timezone = VALUES(timezone),
-    created_at_shop = VALUES(created_at_shop),
-    user_id = VALUES(user_id)`,
-      [
-        shop, accessToken, email, shop_owner, shop_name, domain, myshopify_domain,
+        shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
         plan_name, country, province, city, phone, currency, money_format,
-        timezone, created_at, userId
+        timezone, created_at_shop, user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE access_token=VALUES(access_token), email=VALUES(email),
+        shop_owner=VALUES(shop_owner), shop_name=VALUES(shop_name),
+        domain=VALUES(domain), myshopify_domain=VALUES(myshopify_domain),
+        plan_name=VALUES(plan_name), country=VALUES(country), province=VALUES(province),
+        city=VALUES(city), phone=VALUES(phone), currency=VALUES(currency),
+        money_format=VALUES(money_format), timezone=VALUES(timezone),
+        created_at_shop=VALUES(created_at_shop), user_id=VALUES(user_id)`,
+      [
+        shop,
+        accessToken,
+        shopData.email,
+        shopData.shop_owner,
+        shopData.name,
+        shopData.domain,
+        shopData.myshopify_domain,
+        shopData.plan_name,
+        shopData.country_name,
+        shopData.province,
+        shopData.city,
+        shopData.phone,
+        shopData.currency,
+        shopData.money_format,
+        shopData.iana_timezone,
+        shopData.created_at,
+        userId
       ]
     );
 
+    // Webhooks
     const webhookTopics = [
       { topic: 'CUSTOMERS_DATA_REQUEST', path: '/webhook/customers/data_request' },
       { topic: 'CUSTOMERS_REDACT', path: '/webhook/customers/redact' },
@@ -140,7 +138,7 @@ app.get('/callback', async (req, res) => {
       const mutation = `
         mutation {
           webhookSubscriptionCreate(topic: ${topic}, webhookSubscription: {
-            callbackUrl: "${URL}${path}",
+            callbackUrl: "${process.env.APP_URL}${path}",
             format: JSON
           }) {
             webhookSubscription { id }
@@ -149,17 +147,45 @@ app.get('/callback', async (req, res) => {
         }
       `;
       await axios.post(
-        `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
         { query: mutation },
-        { headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' } }
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
       );
     }
 
-    res.send('App installed & webhooks registered.');
+    // ✅ Final redirect to embedded app URL
+    return res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`);
   } catch (err) {
     console.error('OAuth error:', err.response?.data || err.message);
-    res.send('OAuth process failed.');
+    res.status(500).send('OAuth process failed.');
   }
+});
+app.get('/apps/shipping-owl', (req, res) => {
+  const { shop } = req.query;
+
+  // Set proper Content-Security-Policy for embedded apps
+  res.setHeader('Content-Security-Policy', `frame-ancestors https://${shop} https://admin.shopify.com`);
+
+  res.send(`<h1>Welcome to Shipping Owl for ${shop}</h1>`);
+});
+app.post('/webhook/customers/data_request', (req, res) => {
+  console.log('Data request webhook');
+  res.status(200).send('OK');
+});
+
+app.post('/webhook/customers/redact', (req, res) => {
+  console.log('Customer redact webhook');
+  res.status(200).send('OK');
+});
+
+app.post('/webhook/shop/redact', (req, res) => {
+  console.log('Shop redact webhook');
+  res.status(200).send('OK');
 });
 
 app.get('/dashboard', async (req, res) => {

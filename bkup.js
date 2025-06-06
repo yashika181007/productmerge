@@ -58,22 +58,17 @@ app.get('/', (req, res) => {
 //   - persist to DB
 //   - register webhook if not already
 // ------------------------------------------------------------------
-const crypto = require('crypto');
-const axios = require('axios');
-const qs = require('qs');
-
 app.get('/callback', async (req, res) => {
-  const { shop, code, hmac, host } = req.query;
+  const { shop, code, hmac } = req.query;
+  if (!shop || !code || !hmac) return res.send('Missing parameters.');
 
-  if (!shop || !code || !hmac || !host) return res.send('Missing parameters.');
-
-  // HMAC validation
+  // Validate HMAC
   const params = { ...req.query };
   delete params.hmac;
   delete params.signature;
   const message = new URLSearchParams(params).toString();
   const generatedHash = crypto
-    .createHmac('sha256', process.env.SHOPIFY_API_SECRET)
+    .createHmac('sha256', SHOPIFY_API_SECRET)
     .update(message)
     .digest('hex');
 
@@ -82,48 +77,71 @@ app.get('/callback', async (req, res) => {
   }
 
   try {
-    // Get access token
+    // Exchange code for access token
     const tokenRes = await axios.post(
       `https://${shop}/admin/oauth/access_token`,
       qs.stringify({
-        client_id: process.env.SHOPIFY_API_KEY,
-        client_secret: process.env.SHOPIFY_API_SECRET,
+        client_id: SHOPIFY_API_KEY,
+        client_secret: SHOPIFY_API_SECRET,
         code
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
     const accessToken = tokenRes.data.access_token;
 
-    // Get shop info
+    // Fetch shop info
     const storeInfo = await axios.get(
-      `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/shop.json`,
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/shop.json`,
       { headers: { 'X-Shopify-Access-Token': accessToken } }
     );
     const shopData = storeInfo.data.shop;
 
-    // Save user
+    // Check if user exists, else create user
     const [rows] = await db.execute('SELECT id FROM users WHERE email = ?', [shopData.email]);
-    let userId = rows.length > 0
-      ? rows[0].id
-      : (await db.execute(
+    let userId;
+
+    if (rows.length > 0) {
+      userId = rows[0].id;
+      console.log(userId);
+    } else {
+      try {
+        const [insertUserResult] = await db.execute(
           'INSERT INTO users (email, name) VALUES (?, ?)',
           [shopData.email, shopData.shop_owner]
-        ))[0].insertId;
+        );
+        userId = insertUserResult.insertId;
+        console.error('User insert sucessfull');
+      } catch (insertErr) {
+        console.error('User insert failed:', insertErr.message);
+        return res.send('Failed to insert user.');
+      }
+    }
 
-    // Save shop
+    // Insert or update shop info with user_id FK
     await db.execute(
       `INSERT INTO installed_shops (
         shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
         plan_name, country, province, city, phone, currency, money_format,
         timezone, created_at_shop, user_id
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE access_token=VALUES(access_token), email=VALUES(email),
-        shop_owner=VALUES(shop_owner), shop_name=VALUES(shop_name),
-        domain=VALUES(domain), myshopify_domain=VALUES(myshopify_domain),
-        plan_name=VALUES(plan_name), country=VALUES(country), province=VALUES(province),
-        city=VALUES(city), phone=VALUES(phone), currency=VALUES(currency),
-        money_format=VALUES(money_format), timezone=VALUES(timezone),
-        created_at_shop=VALUES(created_at_shop), user_id=VALUES(user_id)`,
+      ON DUPLICATE KEY UPDATE
+        access_token = VALUES(access_token),
+        email = VALUES(email),
+        shop_owner = VALUES(shop_owner),
+        shop_name = VALUES(shop_name),
+        domain = VALUES(domain),
+        myshopify_domain = VALUES(myshopify_domain),
+        plan_name = VALUES(plan_name),
+        country = VALUES(country),
+        province = VALUES(province),
+        city = VALUES(city),
+        phone = VALUES(phone),
+        currency = VALUES(currency),
+        money_format = VALUES(money_format),
+        timezone = VALUES(timezone),
+        created_at_shop = VALUES(created_at_shop),
+        user_id = VALUES(user_id)
+      `,
       [
         shop,
         accessToken,
@@ -145,65 +163,13 @@ app.get('/callback', async (req, res) => {
       ]
     );
 
-    // Webhooks
-    const webhookTopics = [
-      { topic: 'CUSTOMERS_DATA_REQUEST', path: '/webhook/customers/data_request' },
-      { topic: 'CUSTOMERS_REDACT', path: '/webhook/customers/redact' },
-      { topic: 'SHOP_REDACT', path: '/webhook/shop/redact' }
-    ];
+    // Register webhook as you already do...
 
-    for (const { topic, path } of webhookTopics) {
-      const mutation = `
-        mutation {
-          webhookSubscriptionCreate(topic: ${topic}, webhookSubscription: {
-            callbackUrl: "${process.env.APP_URL}${path}",
-            format: JSON
-          }) {
-            webhookSubscription { id }
-            userErrors { field message }
-          }
-        }
-      `;
-      await axios.post(
-        `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
-        { query: mutation },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-    }
-
-    // ✅ Final redirect to embedded app URL
-    return res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`);
+    res.send('App installed & webhook registered.');
   } catch (err) {
-    console.error('OAuth error:', err.response?.data || err.message);
-    res.status(500).send('OAuth process failed.');
+    console.error('OAuth callback error:', err.response?.data || err.message);
+    res.send('OAuth process failed.');
   }
-});
-app.get('/apps/shipping-owl', (req, res) => {
-  const { shop } = req.query;
-
-  // Set proper Content-Security-Policy for embedded apps
-  res.setHeader('Content-Security-Policy', `frame-ancestors https://${shop} https://admin.shopify.com`);
-
-  res.send(`<h1>Welcome to Shipping Owl for ${shop}</h1>`);
-});
-app.post('/webhook/customers/data_request', (req, res) => {
-  console.log('Data request webhook');
-  res.status(200).send('OK');
-});
-
-app.post('/webhook/customers/redact', (req, res) => {
-  console.log('Customer redact webhook');
-  res.status(200).send('OK');
-});
-
-app.post('/webhook/shop/redact', (req, res) => {
-  console.log('Shop redact webhook');
-  res.status(200).send('OK');
 });
 
 app.get('/seed-products', async (req, res) => {
