@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const { shopifyApi, memorySessionStorage } = require('@shopify/shopify-api');
+const { shopifyApi, memorySessionStorage,LATEST_API_VERSION  } = require('@shopify/shopify-api');
 
 const axios = require('axios');
 const mysql = require('mysql2/promise');
