@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
-const { shopifyApi, memorySessionStorage,LATEST_API_VERSION  } = require('@shopify/shopify-api');
-
+const { shopifyApi, LATEST_API_VERSION  } = require('@shopify/shopify-api');
+const MySQLStore = require('express-mysql-session')(session);
 const axios = require('axios');
 const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
@@ -16,22 +16,18 @@ const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-04';
 const APP_URL = process.env.URL;
 
-const db = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  database: process.env.DB_NAME
-});
+const ShopifyMySQLSessionStorage = require('./shopify-mysql-session-storage');
+
+const shopifySessionStorage = new ShopifyMySQLSessionStorage(db); // 'db' is your mysql2 pool
 
 const shopify = shopifyApi({
-  apiKey: process.env.SHOPIFY_API_KEY,
-  apiSecretKey: process.env.SHOPIFY_API_SECRET,
+  apiKey: SHOPIFY_API_KEY,
+  apiSecretKey: SHOPIFY_API_SECRET,
   scopes: process.env.SHOPIFY_SCOPES.split(','),
-  hostName: new URL(process.env.URL).host,
+  hostName: new URL(APP_URL).host,
   isEmbeddedApp: true,
   apiVersion: LATEST_API_VERSION,
-  sessionStorage: new memorySessionStorage(),
-
+  sessionStorage: shopifySessionStorage,  // <-- Use your MySQL session storage here
 });
 
 app.set('view engine', 'ejs');
