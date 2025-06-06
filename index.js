@@ -25,7 +25,31 @@ app.set('view engine', 'ejs');
 app.set('views', __dirname + '/views');
 app.use(express.static(__dirname + '/public'));
 app.use('/webhook/orders/create', bodyParser.raw({ type: 'application/json' }));
+app.use(bodyParser.raw({ type: 'application/json' }));
+function verifyShopifyWebhook(req, res, next) {
+  const hmac = req.headers['x-shopify-hmac-sha256'];
+  const body = req.body; // raw body as buffer
+  const secret = process.env.SHOPIFY_API_SECRET;
 
+  const hash = crypto
+    .createHmac('sha256', secret)
+    .update(body, 'utf8')
+    .digest('base64');
+
+  if (hash !== hmac) {
+    console.warn('❌ Webhook HMAC validation failed.');
+    return res.status(401).send('Unauthorized');
+  }
+
+  // If valid, parse body into JSON
+  try {
+    req.body = JSON.parse(body.toString('utf8'));
+  } catch (err) {
+    return res.status(400).send('Invalid JSON');
+  }
+
+  next();
+}
 app.get('/', (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.send('Missing shop parameter.');
