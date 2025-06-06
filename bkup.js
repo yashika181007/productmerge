@@ -165,7 +165,9 @@ app.get('/callback', async (req, res) => {
 
     // Register webhook as you already do...
 
-    res.send('App installed & webhook registered.');
+    const { host } = req.query;
+    return res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`);
+
   } catch (err) {
     console.error('OAuth callback error:', err.response?.data || err.message);
     res.send('OAuth process failed.');
@@ -382,6 +384,18 @@ app.post('/webhook/app/uninstalled', async (req, res) => {
     console.log(`App uninstalled by ${shop}`);
   }
   res.status(200).send('Webhook received');
+});
+app.post('/webhook/shop/redact', express.json(), async (req, res) => {
+  try {
+    // Shopify sends a data payload — you can log it if needed:
+    console.log('SHOP_REDACT webhook received:', req.body);
+
+    // Acknowledge receipt with 200 OK
+    res.status(200).send('Shop redact received.');
+  } catch (err) {
+    console.error('Error handling shop/redact webhook:', err.message);
+    res.status(500).send('Internal server error.');
+  }
 });
 
 // ------------------------------------------------------------------
