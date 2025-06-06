@@ -1,24 +1,18 @@
 require('dotenv').config();
 const express = require('express');
-const session = require('express-session');
-require('@shopify/shopify-api/adapters/node'); // ✅ This fixes the error
-const { shopifyApi, LATEST_API_VERSION  } = require('@shopify/shopify-api');
-const MySQLStore = require('express-mysql-session')(session);
+const { shopifyApi, MemorySessionStorage } = require('@shopify/shopify-api');
 const axios = require('axios');
 const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const qs = require('qs');
-const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-04';
-const APP_URL = process.env.URL;
-
-const ShopifyMySQLSessionStorage = require('./shopify-mysql-session-storage');
+const URL = process.env.URL;
 
 const db = mysql.createPool({
   host: process.env.DB_HOST,
@@ -26,27 +20,16 @@ const db = mysql.createPool({
   password: process.env.DB_PASS,
   database: process.env.DB_NAME
 });
-const shopifySessionStorage = new ShopifyMySQLSessionStorage(db);
-
-const shopify = shopifyApi({
-  apiKey: SHOPIFY_API_KEY,
-  apiSecretKey: SHOPIFY_API_SECRET,
-  scopes: process.env.SHOPIFY_SCOPES.split(','),
-  hostName: new URL(APP_URL).host,
-  isEmbeddedApp: true,
-  apiVersion: LATEST_API_VERSION,
-  sessionStorage: shopifySessionStorage,  // <-- Use your MySQL session storage here
-});
 
 app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
-app.use(express.static(path.join(__dirname, 'public')));
+app.set('views', __dirname + '/views');
+app.use(express.static(__dirname + '/public'));
+app.use('/webhook/orders/create', bodyParser.raw({ type: 'application/json' }));
 app.use(bodyParser.raw({ type: 'application/json' }));
-
 function verifyShopifyWebhook(req, res, next) {
   const hmac = req.headers['x-shopify-hmac-sha256'];
-  const body = req.body;
-  const secret = SHOPIFY_API_SECRET;
+  const body = req.body; // raw body as buffer
+  const secret = process.env.SHOPIFY_API_SECRET;
 
   const hash = crypto
     .createHmac('sha256', secret)
@@ -58,6 +41,7 @@ function verifyShopifyWebhook(req, res, next) {
     return res.status(401).send('Unauthorized');
   }
 
+  // If valid, parse body into JSON
   try {
     req.body = JSON.parse(body.toString('utf8'));
   } catch (err) {
@@ -65,21 +49,6 @@ function verifyShopifyWebhook(req, res, next) {
   }
 
   next();
-}
-
-async function verifyShopifyToken(req, res, next) {
-  try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.replace('Bearer ', '');
-
-    const payload = await shopify.auth.jwt.decodeSessionToken(token);
-    req.shop = payload.dest.replace('https://', '');
-    req.sessionTokenPayload = payload;
-    next();
-  } catch (error) {
-    console.error('Token verification failed:', error);
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
 }
 app.get('/', (req, res) => {
   const shop = req.query.shop;
@@ -245,7 +214,7 @@ app.get('/dashboard', async (req, res) => {
   res.render('dashboard', { productCount: count });
 });
 
-app.get('/seed-products',verifyShopifyToken, async (req, res) => {
+app.get('/seed-products', async (req, res) => {
   const baseUrl = URL;
   const dummy = [
     ['SKU-RED-01', 'Red T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],
@@ -256,7 +225,7 @@ app.get('/seed-products',verifyShopifyToken, async (req, res) => {
   res.send('Dummy products inserted.');
 });
 
-app.get('/sync-products',verifyShopifyToken, async (req, res) => {
+app.get('/sync-products', async (req, res) => {
   const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
   if (!installed) return res.status(400).send('No installed shop.');
 
@@ -347,7 +316,7 @@ app.get('/sync-products',verifyShopifyToken, async (req, res) => {
   res.send(`Synced ${products.length} products.`);
 });
 
-app.get('/fetch-orders',verifyShopifyToken, async (req, res) => {
+app.get('/fetch-orders', async (req, res) => {
   const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
   const gql = `{
     orders(first: 10, sortKey: CREATED_AT, reverse: true) {

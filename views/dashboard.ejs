@@ -1,16 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Shopify App Dashboard</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 2rem; }
     button { margin: 0.5rem; padding: 0.5rem 1rem; font-size: 1rem; }
     #output { margin-top: 1rem; white-space: pre-wrap; border: 1px solid #ccc; padding: 1rem; }
   </style>
-  <!-- ✅ Load App Bridge -->
-  <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
 </head>
 <body>
   <h1>App Dashboard</h1>
@@ -23,25 +21,8 @@
   <div id="output"></div>
 
   <script>
-    const AppBridge = window['app-bridge'];
-    const createApp = AppBridge.default;
-    const { getSessionToken } = AppBridge.utils;
-
-    const host = new URLSearchParams(window.location.search).get("host");
-    const app = createApp({
-      apiKey: "<%= process.env.SHOPIFY_API_KEY %>",
-      host: host,
-    });
-
-    // 🔐 Secure API Call with Session Token
     async function callApi(path) {
-      const token = await getSessionToken(app);
-      const res = await fetch(path, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const res = await fetch(path);
       const text = await res.text();
       document.getElementById('output').innerText = text;
     }
