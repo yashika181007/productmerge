@@ -57,7 +57,7 @@ const shopify = shopifyApi({
   apiSecretKey: process.env.SHOPIFY_API_SECRET,
   apiVersion: LATEST_API_VERSION,
   isEmbeddedApp: true,
-  hostName: process.env.HOST.replace(/^https:\/\//, ''),
+  hostName: process.env.DB_HOST,
   adminApiAccessToken: process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN, // optional
   // sessionStorage: Your session strategy
 });
