@@ -21,9 +21,15 @@
       padding: 0.5rem 1rem;
       font-size: 1rem;
       cursor: pointer;
+      transition: background-color 0.2s ease;
     }
 
-    button:hover {
+    button:disabled {
+      background: #a0a5d6;
+      cursor: not-allowed;
+    }
+
+    button:hover:not(:disabled) {
       background-color: #4b56a3;
     }
 
@@ -33,15 +39,15 @@
       border: 1px solid #ccc;
       padding: 1rem;
       background: white;
+      min-height: 100px;
+      font-family: monospace;
     }
   </style>
 </head>
 
 <body>
   <h1>🚀 Shipping Owl Dashboard</h1>
-  <p>Local products in DB: <strong>
-      <%= productCount %>
-    </strong></p>
+  <p>Local products in DB: <strong><%= productCount %></strong></p>
 
   <button id="seed">Seed Dummy Products</button>
   <button id="sync">Sync Products to Shopify</button>
@@ -50,20 +56,57 @@
   <div id="output"></div>
 
   <script>
-    async function callApi(path) {
+    const buttons = {
+      seed: document.getElementById('seed'),
+      sync: document.getElementById('sync'),
+      fetch: document.getElementById('fetch')
+    };
+
+    async function callApi(path, btn) {
       try {
+        btn.disabled = true;
+        output.textContent = 'Loading...';
         const res = await fetch(path);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} - ${res.statusText}`);
+        }
         const text = await res.text();
-        document.getElementById('output').innerText = text;
+        output.textContent = text;
       } catch (err) {
-        document.getElementById('output').innerText = 'Error: ' + err.message;
+        output.textContent = 'Error: ' + err.message;
+      } finally {
+        btn.disabled = false;
       }
     }
 
-    document.getElementById('seed').addEventListener('click', () => callApi('/seed-products'));
-    document.getElementById('sync').addEventListener('click', () => callApi('/sync-products'));
-    document.getElementById('fetch').addEventListener('click', () => callApi('/fetch-orders'));
+    const output = document.getElementById('output');
+
+    buttons.seed.addEventListener('click', () => callApi('/seed-products', buttons.seed));
+    buttons.sync.addEventListener('click', () => callApi('/sync-products', buttons.sync));
+    buttons.fetch.addEventListener('click', () => callApi('/fetch-orders', buttons.fetch));
   </script>
+
+  <!-- Shopify App Bridge -->
+  <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
+  <script>
+    (function () {
+      const AppBridge = window['app-bridge'];
+      const createApp = AppBridge.default;
+
+      const app = createApp({
+        apiKey: '<%= process.env.SHOPIFY_API_KEY %>',
+        host: new URLSearchParams(window.location.search).get('host'),
+        forceRedirect: true
+      });
+
+      // You can add more App Bridge features here if needed
+    })();
+  </script>
+
+  <script>
+    console.log('HOST param:', new URLSearchParams(window.location.search).get('host'));
+  </script>
+
 </body>
 
 </html>

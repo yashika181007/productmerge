@@ -24,23 +24,29 @@ const db = mysql.createPool({
 app.set('view engine', 'ejs');
 app.set('views', __dirname + '/views');
 app.use(express.static(__dirname + '/public'));
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
+const rawBodySaver = (req, res, buf) => {
+  if (buf && buf.length) {
+    req.rawBody = buf.toString('utf8');
+  }
+};
+
+app.use(bodyParser.json({ verify: rawBodySaver }));
+app.use(bodyParser.urlencoded({ extended: true, verify: rawBodySaver }));
+
 app.use((req, res, next) => {
-  res.setHeader(
-    'Content-Security-Policy',
-    `frame-ancestors https://admin.shopify.com`
-  );
+  console.log('[CSP SET] for:', req.originalUrl);
+  res.setHeader('Content-Security-Policy', 'frame-ancestors https://admin.shopify.com');
   next();
 });
+
 function verifyShopifyWebhook(req, res, next) {
   const hmac = req.headers['x-shopify-hmac-sha256'];
-  const body = req.body; // raw body as buffer
+  const rawBody = req.rawBody;
   const secret = process.env.SHOPIFY_API_SECRET;
 
   const hash = crypto
     .createHmac('sha256', secret)
-    .update(body, 'utf8')
+    .update(rawBody, 'utf8')
     .digest('base64');
 
   if (hash !== hmac) {
@@ -49,13 +55,14 @@ function verifyShopifyWebhook(req, res, next) {
   }
 
   try {
-    req.body = JSON.parse(body.toString('utf8'));
+    req.body = JSON.parse(rawBody);
   } catch (err) {
     return res.status(400).send('Invalid JSON');
   }
 
   next();
 }
+
 app.get('/', (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.send('Missing shop parameter.');
@@ -83,9 +90,9 @@ app.get('/callback', async (req, res) => {
   const generatedHash = crypto
     .createHmac('sha256', process.env.SHOPIFY_API_SECRET)
     .update(message)
-    .digest('hex');
+    .digest('base64');
 
-  if (!crypto.timingSafeEqual(Buffer.from(hmac, 'hex'), Buffer.from(generatedHash, 'hex'))) {
+  if (!crypto.timingSafeEqual(Buffer.from(hmac, 'base64'), Buffer.from(generatedHash, 'base64'))) {
     return res.send('HMAC validation failed.');
   }
 
@@ -193,6 +200,8 @@ app.get('/callback', async (req, res) => {
     // Final embedded redirect
     const redirectUrl = `https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`;
     console.log('Redirecting to:', redirectUrl);
+    console.log('Callback params:', req.query);
+
     return res.redirect(redirectUrl);
   } catch (err) {
     console.error('OAuth error:', err.response?.data || err.message);
@@ -202,9 +211,8 @@ app.get('/callback', async (req, res) => {
 
 app.get('/apps/shipping-owl', async (req, res) => {
   const { shop } = req.query;
-
-  res.setHeader('Content-Security-Policy', 'frame-ancestors https://admin.shopify.com');
-  res.render('dashboard', { productCount, shop });
+  const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
+  res.render('dashboard', { productCount: count, shop });
 });
 
 app.post('/webhook/shop/redact', verifyShopifyWebhook, (req, res) => {
