@@ -238,11 +238,16 @@ app.get('/dashboard', async (req, res) => {
 app.get('/seed-products', async (req, res) => {
   const baseUrl = URL;
   const dummy = [
-    ['SKU-RED-01', 'Red T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],
-    ['SKU-BLU-02', 'Blue Jeans', 'Classic blue denim jeans', `${baseUrl}/images/blue-jeans.jpg`, 49.99],
-    ['SKU-GRN-03', 'Green Hoodie', 'Cozy green hoodie', `${baseUrl}/images/green-hoodie.jpg`, 39.99],
+    ['SKU-RED-011', 'Red1 T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],
+    ['SKU-BLU-021', 'Blue1 Jeans', 'Classic blue denim jeans', `${baseUrl}/images/blue-jeans.jpg`, 49.99],
+    ['SKU-GRN-031', 'Green1 Hoodie', 'Cozy green hoodie', `${baseUrl}/images/green-hoodie.jpg`, 39.99],
   ];
-  await db.query(`INSERT IGNORE INTO products (sku, title, description, image_url, price) VALUES ?`, [dummy]);
+     await db.query(
+      `INSERT IGNORE INTO products
+         (sku, title, description, image_url, price)
+       VALUES ?`,
+      [dummy]
+    );
   res.send('Dummy products inserted.');
 });
 
