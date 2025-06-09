@@ -95,7 +95,10 @@ app.get('/callback', async (req, res) => {
     .update(message)
     .digest('base64');
 
-  if (!crypto.timingSafeEqual(Buffer.from(hmac, 'base64'), Buffer.from(generatedHash, 'base64'))) {
+  const hmacBuffer = Buffer.from(hmac, 'base64');
+  const generatedBuffer = Buffer.from(generatedHash, 'base64');
+
+  if (hmacBuffer.length !== generatedBuffer.length || !crypto.timingSafeEqual(hmacBuffer, generatedBuffer)) {
     return res.send('HMAC validation failed.');
   }
 
@@ -245,12 +248,12 @@ app.get('/seed-products', async (req, res) => {
     ['SKU-BLU-021', 'Blue1 Jeans', 'Classic blue denim jeans', `${baseUrl}/images/blue-jeans.jpg`, 49.99],
     ['SKU-GRN-031', 'Green1 Hoodie', 'Cozy green hoodie', `${baseUrl}/images/green-hoodie.jpg`, 39.99],
   ];
-     await db.query(
-      `INSERT IGNORE INTO products
+  await db.query(
+    `INSERT IGNORE INTO products
          (sku, title, description, image_url, price)
        VALUES ?`,
-      [dummy]
-    );
+    [dummy]
+  );
   res.send('Dummy products inserted.');
 });
 
