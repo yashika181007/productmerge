@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,6 +11,7 @@
       background: #f6f6f7;
       padding: 2rem;
     }
+
     button {
       background: #5c6ac4;
       color: white;
@@ -20,9 +22,11 @@
       font-size: 1rem;
       cursor: pointer;
     }
+
     button:hover {
       background-color: #4b56a3;
     }
+
     #output {
       margin-top: 1.5rem;
       white-space: pre-wrap;
@@ -32,9 +36,12 @@
     }
   </style>
 </head>
+
 <body>
   <h1>🚀 Shipping Owl Dashboard</h1>
-  <p>Local products in DB: <strong><%= productCount %></strong></p>
+  <p>Local products in DB: <strong>
+      <%= productCount %>
+    </strong></p>
 
   <button id="seed">Seed Dummy Products</button>
   <button id="sync">Sync Products to Shopify</button>
@@ -58,4 +65,5 @@
     document.getElementById('fetch').addEventListener('click', () => callApi('/fetch-orders'));
   </script>
 </body>
+
 </html>

@@ -166,7 +166,7 @@ app.get('/callback', async (req, res) => {
       const mutation = `
         mutation {
           webhookSubscriptionCreate(topic: "${topic}", webhookSubscription: {
-            callbackUrl: "${process.env.APP_URL}${path}",
+            callbackUrl: "${process.env.URL}${path}",
             format: JSON
           }) {
             webhookSubscription { id }
