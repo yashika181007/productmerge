@@ -359,59 +359,59 @@ app.get('/fetch-orders', async (req, res) => {
     }
 
     const gql = `{
-  orders(first: 10, sortKey: CREATED_AT, reverse: true) {
-    edges {
-      node {
-        id
-        name
-        createdAt
-        currencyCode
-        totalPriceSet { shopMoney { amount currencyCode } }
-        subtotalPriceSet { shopMoney { amount currencyCode } }
-        totalShippingPriceSet { shopMoney { amount currencyCode } }
-        totalTaxSet { shopMoney { amount currencyCode } }
-        financialStatus
-        fulfillmentStatus
-        customer {
-          id
-          email
-          firstName
-          lastName
-          phone
-        }
-        billingAddress {
-          address1
-          address2
-          city
-          province
-          country
-          zip
-          phone
-        }
-        shippingAddress {
-          address1
-          address2
-          city
-          province
-          country
-          zip
-          phone
-        }
-        lineItems(first: 50) {
-          edges {
-            node {
-              title
-              sku
-              quantity
-              discountedTotalSet { shopMoney { amount currencyCode } }
-              originalTotalSet { shopMoney { amount currencyCode } }
+      orders(first: 10, sortKey: CREATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            name
+            createdAt
+            currencyCode
+            totalPriceSet { shopMoney { amount currencyCode } }
+            subtotalPriceSet { shopMoney { amount currencyCode } }
+            totalShippingPriceSet { shopMoney { amount currencyCode } }
+            totalTaxSet { shopMoney { amount currencyCode } }
+            displayFinancialStatus
+            displayFulfillmentStatus
+            customer {
+              id
+              email
+              firstName
+              lastName
+              phone
+            }
+            billingAddress {
+              address1
+              address2
+              city
+              province
+              country
+              zip
+              phone
+            }
+            shippingAddress {
+              address1
+              address2
+              city
+              province
+              country
+              zip
+              phone
+            }
+            lineItems(first: 50) {
+              edges {
+                node {
+                  title
+                  sku
+                  quantity
+                  discountedTotalSet { shopMoney { amount currencyCode } }
+                  originalTotalSet { shopMoney { amount currencyCode } }
+                }
+              }
             }
           }
         }
       }
-    }
-  }
-}`;
+    }`;
 
     console.log('Sending GraphQL query to Shopify...');
     const response = await axios.post(
@@ -462,8 +462,8 @@ app.get('/fetch-orders', async (req, res) => {
             order.id,
             order.name,
             order.createdAt,
-            order.financialStatus,
-            order.fulfillmentStatus,
+            order.displayFinancialStatus,
+            order.displayFulfillmentStatus,
             order.totalPriceSet.shopMoney.amount,
             order.subtotalPriceSet.shopMoney.amount,
             order.totalShippingPriceSet.shopMoney.amount,
@@ -495,7 +495,7 @@ app.get('/fetch-orders', async (req, res) => {
               item.title,
               item.sku,
               item.quantity,
-              item.priceSet.shopMoney.amount,
+              item.originalTotalSet.shopMoney.amount,
               item.discountedTotalSet.shopMoney.amount
             ]
           );
