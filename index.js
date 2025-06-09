@@ -200,14 +200,13 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-// Embedded app landing
-app.get('/apps/shipping-owl', (req, res) => {
+app.get('/apps/shipping-owl', async (req, res) => {
   const { shop } = req.query;
-  console.log('Embedded app loaded for:', shop);
 
-  res.setHeader('Content-Security-Policy', `frame-ancestors https://admin.shopify.com`);
-  res.send(`<h1>Welcome to Shipping Owl for ${shop}</h1>`);
+  res.setHeader('Content-Security-Policy', 'frame-ancestors https://admin.shopify.com');
+  res.render('dashboard', { productCount, shop });
 });
+
 app.post('/webhook/shop/redact', verifyShopifyWebhook, (req, res) => {
   console.log('✅ SHOP_REDACT webhook verified');
   res.status(200).send('Webhook received');

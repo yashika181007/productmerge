@@ -1,17 +1,39 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Shopify App Dashboard</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shipping Owl Dashboard</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 2rem; }
-    button { margin: 0.5rem; padding: 0.5rem 1rem; font-size: 1rem; }
-    #output { margin-top: 1rem; white-space: pre-wrap; border: 1px solid #ccc; padding: 1rem; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #f6f6f7;
+      padding: 2rem;
+    }
+    button {
+      background: #5c6ac4;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      margin: 0.5rem 0.5rem 0 0;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #4b56a3;
+    }
+    #output {
+      margin-top: 1.5rem;
+      white-space: pre-wrap;
+      border: 1px solid #ccc;
+      padding: 1rem;
+      background: white;
+    }
   </style>
 </head>
 <body>
-  <h1>App Dashboard</h1>
+  <h1>🚀 Shipping Owl Dashboard</h1>
   <p>Local products in DB: <strong><%= productCount %></strong></p>
 
   <button id="seed">Seed Dummy Products</button>
@@ -22,14 +44,18 @@
 
   <script>
     async function callApi(path) {
-      const res = await fetch(path);
-      const text = await res.text();
-      document.getElementById('output').innerText = text;
+      try {
+        const res = await fetch(path);
+        const text = await res.text();
+        document.getElementById('output').innerText = text;
+      } catch (err) {
+        document.getElementById('output').innerText = 'Error: ' + err.message;
+      }
     }
 
-    document.getElementById('seed').onclick = () => callApi('/seed-products');
-    document.getElementById('sync').onclick = () => callApi('/sync-products');
-    document.getElementById('fetch').onclick = () => callApi('/fetch-orders');
+    document.getElementById('seed').addEventListener('click', () => callApi('/seed-products'));
+    document.getElementById('sync').addEventListener('click', () => callApi('/sync-products'));
+    document.getElementById('fetch').addEventListener('click', () => callApi('/fetch-orders'));
   </script>
 </body>
 </html>
