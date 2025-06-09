@@ -5,14 +5,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Shopify App Dashboard</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 2rem; }
-    button { margin: 0.5rem; padding: 0.5rem 1rem; font-size: 1rem; }
-    #output { margin-top: 1rem; white-space: pre-wrap; border: 1px solid #ccc; padding: 1rem; }
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2rem;
+    }
+
+    button {
+      margin: 0.5rem;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+    }
+
+    #output {
+      margin-top: 1rem;
+      white-space: pre-wrap;
+      border: 1px solid #ccc;
+      padding: 1rem;
+    }
   </style>
 </head>
+
 <body>
   <h1>App Dashboard</h1>
-  <p>Local products in DB: <strong><%= productCount %></strong></p>
+  <p>Local products in DB: <strong>
+      <%= productCount %>
+    </strong></p>
 
   <button id="seed">Seed Dummy Products</button>
   <button id="sync">Sync Products to Shopify</button>
@@ -32,34 +49,35 @@
     document.getElementById('fetch').onclick = () => callApi('/fetch-orders');
   </script>
   <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
-<script src="https://unpkg.com/@shopify/app-bridge-utils@3"></script>
-<script>
-  const AppBridge = window['app-bridge'];
-  const createApp = AppBridge.default;
-  const actions = AppBridge.actions;
+  <script src="https://unpkg.com/@shopify/app-bridge-utils@3"></script>
+  <script>
+    const AppBridge = window['app-bridge'];
+    const createApp = AppBridge.default;
+    const actions = AppBridge.actions;
 
-  const params = new URLSearchParams(window.location.search);
-  const host = params.get('host');
+    const params = new URLSearchParams(window.location.search);
+    const host = params.get('host');
 
-  const app = createApp({
-    apiKey: '<%= process.env.SHOPIFY_API_KEY %>',
-    host,
-    forceRedirect: true
-  });
-
-  const TitleBar = actions.TitleBar;
-  TitleBar.create(app, { title: "Dashboard" });
-
-  // Only show modals on click
-  function showModal() {
-    const Modal = actions.Modal;
-    const modal = Modal.create(app, {
-      title: 'Manual Trigger',
-      message: 'Only open on click',
+    const app = createApp({
+      apiKey: '<%= process.env.SHOPIFY_API_KEY %>',
+      host,
+      forceRedirect: true
     });
-    modal.dispatch(Modal.Action.OPEN);
-  }
-</script>
+
+    const TitleBar = actions.TitleBar;
+    TitleBar.create(app, { title: "Dashboard" });
+
+    // Only show modals on click
+    function showModal() {
+      const Modal = actions.Modal;
+      const modal = Modal.create(app, {
+        title: 'Manual Trigger',
+        message: 'Only open on click',
+      });
+      modal.dispatch(Modal.Action.OPEN);
+    }
+  </script>
 
 </body>
+
 </html>
