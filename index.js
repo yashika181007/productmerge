@@ -34,8 +34,11 @@ app.use(bodyParser.json({ verify: rawBodySaver }));
 app.use(bodyParser.urlencoded({ extended: true, verify: rawBodySaver }));
 
 app.use((req, res, next) => {
-  console.log('[CSP SET] for:', req.originalUrl);
-  res.setHeader('Content-Security-Policy', 'frame-ancestors https://admin.shopify.com');
+  const shop = req.query.shop || '';
+  res.setHeader(
+    'Content-Security-Policy',
+    `frame-ancestors https://${shop} https://admin.shopify.com`
+  );
   next();
 });
 
