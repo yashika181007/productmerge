@@ -41,7 +41,6 @@ function verifyShopifyWebhook(req, res, next) {
     return res.status(401).send('Unauthorized');
   }
 
-  // If valid, parse body into JSON
   try {
     req.body = JSON.parse(body.toString('utf8'));
   } catch (err) {
@@ -69,7 +68,6 @@ app.get('/callback', async (req, res) => {
 
   if (!shop || !code || !hmac || !host) return res.send('Missing parameters.');
 
-  // HMAC validation
   const params = { ...req.query };
   delete params.hmac;
   delete params.signature;
@@ -84,7 +82,6 @@ app.get('/callback', async (req, res) => {
   }
 
   try {
-    // Get access token
     const tokenRes = await axios.post(
       `https://${shop}/admin/oauth/access_token`,
       qs.stringify({
@@ -96,14 +93,12 @@ app.get('/callback', async (req, res) => {
     );
     const accessToken = tokenRes.data.access_token;
 
-    // Get shop info
     const storeInfo = await axios.get(
       `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/shop.json`,
       { headers: { 'X-Shopify-Access-Token': accessToken } }
     );
     const shopData = storeInfo.data.shop;
 
-    // Save user
     const [rows] = await db.execute('SELECT id FROM users WHERE email = ?', [shopData.email]);
     let userId = rows.length > 0
       ? rows[0].id
@@ -112,7 +107,6 @@ app.get('/callback', async (req, res) => {
         [shopData.email, shopData.shop_owner]
       ))[0].insertId;
 
-    // Save shop
     await db.execute(
       `INSERT INTO installed_shops (
         shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
@@ -147,7 +141,6 @@ app.get('/callback', async (req, res) => {
       ]
     );
 
-    // Webhooks
     const webhookTopics = [
       { topic: 'CUSTOMERS_DATA_REQUEST', path: '/webhook/customers/data_request' },
       { topic: 'CUSTOMERS_REDACT', path: '/webhook/customers/redact' },
@@ -177,10 +170,7 @@ app.get('/callback', async (req, res) => {
         }
       );
     }
-
-    // ✅ Final redirect to embedded app URL
     return res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`);
-    
   } catch (err) {
     console.error('OAuth error:', err.response?.data || err.message);
     res.status(500).send('OAuth process failed.');
@@ -189,14 +179,13 @@ app.get('/callback', async (req, res) => {
 app.get('/apps/shipping-owl', (req, res) => {
   const { shop } = req.query;
 
-  // Set proper Content-Security-Policy for embedded apps
   res.setHeader('Content-Security-Policy', `frame-ancestors https://${shop} https://admin.shopify.com`);
 
-  res.send(`<h1>Welcome to Shipping Owl for ${shop}</h1>`);
+ res.render('app', { shop });
+
 });
 app.post('/webhook/shop/redact', verifyShopifyWebhook, (req, res) => {
   console.log('✅ SHOP_REDACT webhook verified');
-  // You can access req.body here (already parsed)
   res.status(200).send('Webhook received');
 });
 
@@ -266,8 +255,6 @@ app.get('/sync-products', async (req, res) => {
     }
 
     const productId = productCreateResponse.product.id;
-
-    // Media
     await axios.post(
       `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
       {
