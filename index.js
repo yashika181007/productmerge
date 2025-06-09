@@ -24,8 +24,15 @@ const db = mysql.createPool({
 app.set('view engine', 'ejs');
 app.set('views', __dirname + '/views');
 app.use(express.static(__dirname + '/public'));
-app.use('/webhook/orders/create', bodyParser.raw({ type: 'application/json' }));
-app.use(bodyParser.raw({ type: 'application/json' }));
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use((req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    `frame-ancestors https://admin.shopify.com`
+  );
+  next();
+});
 function verifyShopifyWebhook(req, res, next) {
   const hmac = req.headers['x-shopify-hmac-sha256'];
   const body = req.body; // raw body as buffer
@@ -72,6 +79,7 @@ app.get('/callback', async (req, res) => {
   delete params.hmac;
   delete params.signature;
   const message = new URLSearchParams(params).toString();
+
   const generatedHash = crypto
     .createHmac('sha256', process.env.SHOPIFY_API_SECRET)
     .update(message)
@@ -82,6 +90,7 @@ app.get('/callback', async (req, res) => {
   }
 
   try {
+    // Exchange code for access token
     const tokenRes = await axios.post(
       `https://${shop}/admin/oauth/access_token`,
       qs.stringify({
@@ -91,14 +100,18 @@ app.get('/callback', async (req, res) => {
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
+
     const accessToken = tokenRes.data.access_token;
 
+    // Get shop data
     const storeInfo = await axios.get(
       `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/shop.json`,
       { headers: { 'X-Shopify-Access-Token': accessToken } }
     );
+
     const shopData = storeInfo.data.shop;
 
+    // Insert or get user
     const [rows] = await db.execute('SELECT id FROM users WHERE email = ?', [shopData.email]);
     let userId = rows.length > 0
       ? rows[0].id
@@ -107,6 +120,7 @@ app.get('/callback', async (req, res) => {
         [shopData.email, shopData.shop_owner]
       ))[0].insertId;
 
+    // Insert or update shop
     await db.execute(
       `INSERT INTO installed_shops (
         shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
@@ -141,6 +155,7 @@ app.get('/callback', async (req, res) => {
       ]
     );
 
+    // Register GDPR webhooks
     const webhookTopics = [
       { topic: 'CUSTOMERS_DATA_REQUEST', path: '/webhook/customers/data_request' },
       { topic: 'CUSTOMERS_REDACT', path: '/webhook/customers/redact' },
@@ -150,7 +165,7 @@ app.get('/callback', async (req, res) => {
     for (const { topic, path } of webhookTopics) {
       const mutation = `
         mutation {
-          webhookSubscriptionCreate(topic: ${topic}, webhookSubscription: {
+          webhookSubscriptionCreate(topic: "${topic}", webhookSubscription: {
             callbackUrl: "${process.env.APP_URL}${path}",
             format: JSON
           }) {
@@ -159,7 +174,7 @@ app.get('/callback', async (req, res) => {
           }
         }
       `;
-      await axios.post(
+      const response = await axios.post(
         `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
         { query: mutation },
         {
@@ -169,29 +184,28 @@ app.get('/callback', async (req, res) => {
           }
         }
       );
+
+      if (response.data.errors || response.data.data.webhookSubscriptionCreate.userErrors.length) {
+        console.warn('Webhook registration error:', response.data);
+      }
     }
 
-    return res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`);
+    // Final embedded redirect
+    const redirectUrl = `https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`;
+    console.log('Redirecting to:', redirectUrl);
+    return res.redirect(redirectUrl);
   } catch (err) {
     console.error('OAuth error:', err.response?.data || err.message);
     res.status(500).send('OAuth process failed.');
   }
 });
-// Allow iframe embedding from Shopify
-app.use((req, res, next) => {
-  const shop = req.query.shop || 'shopify.com';
-  res.setHeader(
-    'Content-Security-Policy',
-    `frame-ancestors https://${shop} https://admin.shopify.com`
-  );
-  next();
-});
 
+// Embedded app landing
 app.get('/apps/shipping-owl', (req, res) => {
   const { shop } = req.query;
+  console.log('Embedded app loaded for:', shop);
 
-  res.setHeader('Content-Security-Policy', `frame-ancestors https://${shop} https://admin.shopify.com`);
-
+  res.setHeader('Content-Security-Policy', `frame-ancestors https://admin.shopify.com`);
   res.send(`<h1>Welcome to Shipping Owl for ${shop}</h1>`);
 });
 app.post('/webhook/shop/redact', verifyShopifyWebhook, (req, res) => {
