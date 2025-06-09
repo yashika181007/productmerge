@@ -11,6 +11,8 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@shopify/app-bridge": "^3.7.10",
+    "@shopify/app-bridge-utils": "^3.5.1",
     "@shopify/shopify-api": "^6.2.0",
     "axios": "^1.9.0",
     "body-parser": "^2.2.0",

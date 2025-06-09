@@ -180,6 +180,7 @@ app.get('/callback', async (req, res) => {
 
     // ✅ Final redirect to embedded app URL
     return res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`);
+    
   } catch (err) {
     console.error('OAuth error:', err.response?.data || err.message);
     res.status(500).send('OAuth process failed.');
