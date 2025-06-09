@@ -81,24 +81,33 @@ app.get('/', (req, res) => {
 });
 
 app.get('/callback', async (req, res) => {
-  const { shop, code, hmac, host } = req.query;
+  const { shop, code, hmac, host, timestamp } = req.query;
 
-  if (!shop || !code || !hmac || !host) return res.send('Missing parameters.');
+  if (!shop || !code || !hmac || !host || !timestamp) {
+    return res.send('Missing parameters.');
+  }
 
+  // Step 1: Create a copy of the query params, excluding 'hmac' and 'signature'
   const params = { ...req.query };
-  delete params.hmac;
-  delete params.signature;
-  const message = new URLSearchParams(params).toString();
+  delete params['hmac'];
+  delete params['signature'];
 
+  // Step 2: Sort and format the query string
+  const sortedParams = Object.keys(params)
+    .sort()
+    .map(key => `${key}=${Array.isArray(params[key]) ? params[key].join(',') : params[key]}`)
+    .join('&');
+
+  // Step 3: Generate the HMAC using your API secret
   const generatedHash = crypto
-    .createHmac('sha256', process.env.SHOPIFY_API_SECRET)
-    .update(message)
-    .digest('base64');
+    .createHmac('sha256', SHOPIFY_API_SECRET)
+    .update(sortedParams)
+    .digest('hex');
 
-  const hmacBuffer = Buffer.from(hmac, 'base64');
-  const generatedBuffer = Buffer.from(generatedHash, 'base64');
-
-  if (hmacBuffer.length !== generatedBuffer.length || !crypto.timingSafeEqual(hmacBuffer, generatedBuffer)) {
+  // Step 4: Compare (in lowercase hex)
+  if (generatedHash !== hmac) {
+    console.warn('Expected HMAC:', generatedHash);
+    console.warn('Received HMAC:', hmac);
     return res.send('HMAC validation failed.');
   }
 
