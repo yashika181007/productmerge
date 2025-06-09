@@ -177,6 +177,13 @@ app.get('/callback', async (req, res) => {
     res.status(500).send('OAuth process failed.');
   }
 });
+// Allow iframe embedding from Shopify
+app.use((req, res, next) => {
+  const shop = req.query.shop || '';
+  res.setHeader('Content-Security-Policy', `frame-ancestors https://${shop} https://admin.shopify.com`);
+  next();
+});
+
 app.get('/apps/shipping-owl', (req, res) => {
   const { shop } = req.query;
 
