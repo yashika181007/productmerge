@@ -348,22 +348,76 @@ app.get('/sync-products', async (req, res) => {
 
 app.get('/fetch-orders', async (req, res) => {
   const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
-  const gql = `{
-    orders(first: 10, sortKey: CREATED_AT, reverse: true) {
-      edges {
-        node {
-          id name createdAt
-          totalPriceSet { shopMoney { amount currencyCode } }
-          customer { firstName lastName email }
-          lineItems(first: 5) {
-            edges { node { title quantity discountedTotalSet { shopMoney { amount } } } }
-          }
-        }
+  if (!installed) return res.status(400).send('No installed shop.');
+
+  try {
+    const response = await axios.post(
+      `https://${installed.shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
+      { query: gql },
+      { headers: { 'X-Shopify-Access-Token': installed.access_token } }
+    );
+
+    const orders = response.data.data.orders.edges.map(edge => edge.node);
+
+    for (const order of orders) {
+      const orderId = order.id;
+      const customerName = `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim();
+
+      // Insert into orders
+      await db.execute(
+        `INSERT INTO orders (
+          shopify_order_id, name, created_at, financial_status, fulfillment_status,
+          total, subtotal, shipping, tax, currency,
+          customer_id, customer_name, customer_email, customer_phone,
+          billing_address, shipping_address
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE total=VALUES(total), fulfillment_status=VALUES(fulfillment_status)`,
+        [
+          orderId,
+          order.name,
+          order.createdAt,
+          order.financialStatus,
+          order.fulfillmentStatus,
+          order.totalPriceSet.shopMoney.amount,
+          order.subtotalPriceSet.shopMoney.amount,
+          order.totalShippingPriceSet.shopMoney.amount,
+          order.totalTaxSet.shopMoney.amount,
+          order.currencyCode,
+          order.customer?.id || '',
+          customerName,
+          order.customer?.email || '',
+          order.customer?.phone || '',
+          JSON.stringify(order.billingAddress || {}),
+          JSON.stringify(order.shippingAddress || {})
+        ]
+      );
+
+      // Delete previous line items (if re-syncing)
+      await db.execute('DELETE FROM order_line_items WHERE order_id = ?', [orderId]);
+
+      for (const li of order.lineItems.edges) {
+        const item = li.node;
+        await db.execute(
+          `INSERT INTO order_line_items (
+            order_id, title, sku, quantity, price, discounted_total
+          ) VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            orderId,
+            item.title,
+            item.sku,
+            item.quantity,
+            item.priceSet.shopMoney.amount,
+            item.discountedTotalSet.shopMoney.amount
+          ]
+        );
       }
     }
-  }`;
-  const response = await axios.post(`https://${installed.shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, { query: gql }, { headers: { 'X-Shopify-Access-Token': installed.access_token } });
-  res.json(response.data.data.orders.edges.map(edge => edge.node));
+
+    res.send(`Fetched and stored ${orders.length} orders.`);
+  } catch (err) {
+    console.error('Fetch orders error:', err.response?.data || err.message);
+    res.status(500).send('Failed to fetch orders');
+  }
 });
 
 app.post('/webhook/app/uninstalled', bodyParser.raw({ type: 'application/json' }), async (req, res) => {
