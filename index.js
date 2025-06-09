@@ -178,26 +178,27 @@ app.get('/callback', async (req, res) => {
     );
 
     // Register GDPR webhooks
-    const webhookTopics = [
+    const topics = [
       { topic: 'CUSTOMERS_DATA_REQUEST', path: '/webhook/customers/data_request' },
       { topic: 'CUSTOMERS_REDACT', path: '/webhook/customers/redact' },
       { topic: 'SHOP_REDACT', path: '/webhook/shop/redact' }
     ];
 
-    for (const { topic, path } of webhookTopics) {
+    for (const { topic, path } of topics) {
       const mutation = `
-        mutation {
-          webhookSubscriptionCreate(topic: "${topic}", webhookSubscription: {
-            callbackUrl: "${process.env.URL}${path}",
-            format: JSON
-          }) {
-            webhookSubscription { id }
-            userErrors { field message }
-          }
-        }
-      `;
+    mutation {
+      webhookSubscriptionCreate(topic: ${topic}, webhookSubscription: {
+        callbackUrl: "${process.env.URL}${path}",
+        format: JSON
+      }) {
+        webhookSubscription { id }
+        userErrors { field message }
+      }
+    }
+  `;
+
       const response = await axios.post(
-        `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
+        `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
         { query: mutation },
         {
           headers: {
@@ -207,7 +208,7 @@ app.get('/callback', async (req, res) => {
         }
       );
 
-      if (response.data.errors || response.data.data.webhookSubscriptionCreate.userErrors.length) {
+      if (response.data.errors || response.data.data.webhookSubscriptionCreate.userErrors.length > 0) {
         console.warn('Webhook registration error:', response.data);
       }
     }
