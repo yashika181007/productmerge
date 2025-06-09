@@ -87,24 +87,20 @@ app.get('/callback', async (req, res) => {
     return res.send('Missing parameters.');
   }
 
-  // Step 1: Create a copy of the query params, excluding 'hmac' and 'signature'
   const params = { ...req.query };
   delete params['hmac'];
   delete params['signature'];
 
-  // Step 2: Sort and format the query string
   const sortedParams = Object.keys(params)
     .sort()
     .map(key => `${key}=${Array.isArray(params[key]) ? params[key].join(',') : params[key]}`)
     .join('&');
 
-  // Step 3: Generate the HMAC using your API secret
   const generatedHash = crypto
     .createHmac('sha256', SHOPIFY_API_SECRET)
     .update(sortedParams)
     .digest('hex');
 
-  // Step 4: Compare (in lowercase hex)
   if (generatedHash !== hmac) {
     console.warn('Expected HMAC:', generatedHash);
     console.warn('Received HMAC:', hmac);
@@ -112,7 +108,6 @@ app.get('/callback', async (req, res) => {
   }
 
   try {
-    // Exchange code for access token
     const tokenRes = await axios.post(
       `https://${shop}/admin/oauth/access_token`,
       qs.stringify({
@@ -125,7 +120,6 @@ app.get('/callback', async (req, res) => {
 
     const accessToken = tokenRes.data.access_token;
 
-    // Get shop data
     const storeInfo = await axios.get(
       `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/shop.json`,
       { headers: { 'X-Shopify-Access-Token': accessToken } }
@@ -133,7 +127,6 @@ app.get('/callback', async (req, res) => {
 
     const shopData = storeInfo.data.shop;
 
-    // Insert or get user
     const [rows] = await db.execute('SELECT id FROM users WHERE email = ?', [shopData.email]);
     let userId = rows.length > 0
       ? rows[0].id
@@ -142,7 +135,6 @@ app.get('/callback', async (req, res) => {
         [shopData.email, shopData.shop_owner]
       ))[0].insertId;
 
-    // Insert or update shop
     await db.execute(
       `INSERT INTO installed_shops (
         shop, access_token, email, shop_owner, shop_name, domain, myshopify_domain,
@@ -177,7 +169,6 @@ app.get('/callback', async (req, res) => {
       ]
     );
 
-    // Register GDPR webhooks
     const topics = [
       { topic: 'CUSTOMERS_DATA_REQUEST', path: '/webhook/customers/data_request' },
       { topic: 'CUSTOMERS_REDACT', path: '/webhook/customers/redact' },
@@ -213,7 +204,6 @@ app.get('/callback', async (req, res) => {
       }
     }
 
-    // Final embedded redirect
     const redirectUrl = `https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`;
     console.log('Redirecting to:', redirectUrl);
     console.log('Callback params:', req.query);
