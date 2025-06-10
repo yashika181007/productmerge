@@ -181,9 +181,16 @@ app.get('/callback', async (req, res) => {
 });
 
 app.get('/apps/shipping-owl', async (req, res) => {
-  const { shop } = req.query;
+  const { shop, host } = req.query;
+  if (!shop || !host) return res.send('Missing shop or host.');
+
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
-  res.render('dashboard', { productCount: count, shop });
+  res.render('dashboard', {
+    productCount: count,
+    shop,
+    host,
+    SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY // pass key to EJS
+  });
 });
 
 app.post('/webhook/shop/redact', verifyShopifyWebhook, (req, res) => {

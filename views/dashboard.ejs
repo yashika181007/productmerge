@@ -43,11 +43,18 @@
       font-family: monospace;
     }
   </style>
+  <title>Shipping Owl App</title>
+  <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
+  <script src="https://unpkg.com/@shopify/app-bridge-utils@3"></script>
+  <script src="https://unpkg.com/@shopify/polaris@11.0.0/build/esm/index.js"></script>
+  <link href="https://unpkg.com/@shopify/polaris@11.0.0/build/esm/styles.css" rel="stylesheet">
 </head>
 
 <body>
   <h1>🚀 Shipping Owl Dashboard</h1>
-  <p>Local products in DB: <strong><%= productCount %></strong></p>
+  <p>Local products in DB: <strong>
+      <%= productCount %>
+    </strong></p>
 
   <button id="seed">Seed Dummy Products</button>
   <button id="sync">Sync Products to Shopify</button>
@@ -87,21 +94,20 @@
   </script>
 
   <!-- Shopify App Bridge -->
-  <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
   <script>
-    (function () {
-      const AppBridge = window['app-bridge'];
-      const createApp = AppBridge.default;
+    const AppBridge = window['app-bridge'];
+    const createApp = AppBridge.default;
+    const app = createApp({
+      apiKey: '<%= SHOPIFY_API_KEY %>', // ✅ fixed
+      shopOrigin: '<%= shop %>',
+      host: '<%= host %>',
+      forceRedirect: true,
+    });
 
-      const app = createApp({
-        apiKey: '<%= process.env.SHOPIFY_API_KEY %>',
-        host: new URLSearchParams(window.location.search).get('host'),
-        forceRedirect: true
-      });
-
-      // You can add more App Bridge features here if needed
-    })();
+    const TitleBar = AppBridge.actions.TitleBar;
+    TitleBar.create(app, { title: 'Shipping Owl Dashboard' });
   </script>
+
 
   <script>
     console.log('HOST param:', new URLSearchParams(window.location.search).get('host'));
