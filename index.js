@@ -193,10 +193,10 @@ app.get('/callback', async (req, res) => {
       }
     });
     const cleanedShop = shopData.myshopify_domain;
-
-    const redirectUrl = `https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
+    const baseUrl = URL;
+    const redirectUrl = `${baseUrl}/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
     console.log('Redirecting to:', redirectUrl);
-     console.log('host:', host);
+    console.log('host:', host);
     console.log('cleanedShop:', cleanedShop);
 
     return res.redirect(redirectUrl);
