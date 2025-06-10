@@ -168,6 +168,30 @@ app.get('/callback', async (req, res) => {
         userId
       ]
     );
+    await axios.post(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+      query: `mutation {
+    webhookSubscriptionCreate(
+      topic: APP_UNINSTALLED,
+      webhookSubscription: {
+        callbackUrl: "${URL}/webhooks/app-uninstalled",
+        format: JSON
+      }
+    ) {
+      webhookSubscription {
+        id
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }`
+    }, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
 
     const redirectUrl = `https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`;
     console.log('Redirecting to:', redirectUrl);
