@@ -194,11 +194,7 @@ app.get('/callback', async (req, res) => {
     });
     const cleanedShop = shopData.myshopify_domain;
     const baseUrl = URL;
-    const redirectUrl = `${baseUrl}/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
-    console.log('Redirecting to:', redirectUrl);
-    console.log('host:', host);
-    console.log('cleanedShop:', cleanedShop);
-
+    const redirectUrl = `${baseUrl}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
     return res.redirect(redirectUrl);
   } catch (err) {
     console.error('OAuth error:', err.response?.data || err.message);
