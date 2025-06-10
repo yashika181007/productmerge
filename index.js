@@ -169,41 +169,6 @@ app.get('/callback', async (req, res) => {
       ]
     );
 
-    const topics = [
-      { topic: 'CUSTOMERS_DATA_REQUEST', path: '/webhook/customers/data_request' },
-      { topic: 'CUSTOMERS_REDACT', path: '/webhook/customers/redact' },
-      { topic: 'SHOP_REDACT', path: '/webhook/shop/redact' }
-    ];
-
-    for (const { topic, path } of topics) {
-      const mutation = `
-    mutation {
-      webhookSubscriptionCreate(topic: ${topic}, webhookSubscription: {
-        callbackUrl: "${process.env.URL}${path}",
-        format: JSON
-      }) {
-        webhookSubscription { id }
-        userErrors { field message }
-      }
-    }
-  `;
-
-      const response = await axios.post(
-        `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-        { query: mutation },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      if (response.data.errors || response.data.data.webhookSubscriptionCreate.userErrors.length > 0) {
-        console.warn('Webhook registration error:', response.data);
-      }
-    }
-
     const redirectUrl = `https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`;
     console.log('Redirecting to:', redirectUrl);
     console.log('Callback params:', req.query);
