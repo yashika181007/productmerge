@@ -192,8 +192,9 @@ app.get('/callback', async (req, res) => {
         'Content-Type': 'application/json'
       }
     });
+    const cleanedShop = shopData.myshopify_domain;
 
-    const redirectUrl = `https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`;
+    const redirectUrl = `https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
     console.log('Redirecting to:', redirectUrl);
     console.log('Callback params:', req.query);
 
