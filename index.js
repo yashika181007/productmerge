@@ -39,11 +39,10 @@ app.use(bodyParser.json({ verify: rawBodySaver }));
 app.use(bodyParser.urlencoded({ extended: true, verify: rawBodySaver }));
 
 app.use((req, res, next) => {
-  const shop = req.query.shop || '';
-  res.setHeader(
-    'Content-Security-Policy',
-    `frame-ancestors https://${shop} https://admin.shopify.com`
-  );
+  const shop = req.query.shop || req.headers['x-shopify-shop-domain'];
+  if (shop) {
+    res.setHeader("Content-Security-Policy", `frame-ancestors https://${shop} https://admin.shopify.com;`);
+  }
   next();
 });
 
@@ -186,17 +185,18 @@ app.get('/callback', async (req, res) => {
 
 app.get('/apps/shipping-owl', async (req, res) => {
   const { shop, host } = req.query;
-  if (!shop || !host) return res.send('Missing shop or host.');
-  console.log(shop);
-  console.log(host);
+
+  if (!shop || !host) {
+    return res.send('Missing shop or host.');
+  }
+
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
   res.render('dashboard', {
     productCount: count,
     shop,
     host,
-    SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY // pass key to EJS
+    SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY
   });
-  
 });
 
 app.get('/dashboard', verifySessionToken, async (req, res) => {
@@ -204,7 +204,7 @@ app.get('/dashboard', verifySessionToken, async (req, res) => {
   res.render('dashboard', { productCount: count });
 });
 
-app.get('/seed-products', async (req, res) => {
+app.get('/seed-products', verifySessionToken, async (req, res) => {
   const baseUrl = URL;
   const dummy = [
     ['SKU-RED-011', 'Red1 T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],
@@ -212,9 +212,7 @@ app.get('/seed-products', async (req, res) => {
     ['SKU-GRN-031', 'Green1 Hoodie', 'Cozy green hoodie', `${baseUrl}/images/green-hoodie.jpg`, 39.99],
   ];
   await db.query(
-    `INSERT IGNORE INTO products
-         (sku, title, description, image_url, price)
-       VALUES ?`,
+    `INSERT IGNORE INTO products (sku, title, description, image_url, price) VALUES ?`,
     [dummy]
   );
   res.send('Dummy products inserted.');
@@ -456,15 +454,13 @@ app.get('/fetch-orders', verifySessionToken, async (req, res) => {
   }
 });
 
-app.post('/webhook/app/uninstalled', verifyShopifyWebhook, bodyParser.raw({ type: 'application/json' }), async (req, res) => {
-  const hmacHeader = req.headers['x-shopify-hmac-sha256'];
-  const rawBody = req.body;
-  const hash = crypto.createHmac('sha256', SHOPIFY_API_SECRET).update(rawBody).digest('base64');
-  if (hash !== hmacHeader) return res.status(401).send('Unauthorized');
-
+app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => {
   const shop = req.headers['x-shopify-shop-domain'];
-  if (shop) await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
-  res.status(200).send('Webhook received');
+  if (shop) {
+    await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
+    console.log(`App uninstalled for shop: ${shop}`);
+  }
+  res.status(200).send('Received');
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
