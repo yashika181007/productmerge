@@ -40,9 +40,7 @@ app.use(bodyParser.urlencoded({ extended: true, verify: rawBodySaver }));
 
 app.use((req, res, next) => {
   const shop = req.query.shop || req.headers['x-shopify-shop-domain'];
-  if (shop) {
-    res.setHeader("Content-Security-Policy", `frame-ancestors https://${shop} https://admin.shopify.com;`);
-  }
+  res.setHeader("Content-Security-Policy", `frame-ancestors https://${shop} https://admin.shopify.com;`);
   next();
 });
 
@@ -148,35 +146,39 @@ app.get('/callback', async (req, res) => {
         userId
       ]
     );
-  //   await axios.post(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
-  //     query: `mutation {
-  //   webhookSubscriptionCreate(
-  //     topic: APP_UNINSTALLED,
-  //     webhookSubscription: {
-  //       callbackUrl: "${URL}/webhooks/app-uninstalled",
-  //       format: JSON
-  //     }
-  //   ) {
-  //     webhookSubscription {
-  //       id
-  //     }
-  //     userErrors {
-  //       field
-  //       message
-  //     }
-  //   }
-  // }`
-  //   }, {
-  //     headers: {
-  //       'X-Shopify-Access-Token': accessToken,
-  //       'Content-Type': 'application/json'
-  //     }
-  //   });
+    await axios.post(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+      query: `mutation {
+    webhookSubscriptionCreate(
+      topic: APP_UNINSTALLED,
+      webhookSubscription: {
+        callbackUrl: "${URL}/webhooks/app-uninstalled",
+        format: JSON
+      }
+    ) {
+      webhookSubscription {
+        id
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }`
+    }, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
+      }
+    });
     const cleanedShop = shopData.myshopify_domain;
-    const baseUrl = URL;
-    const redirectUrl = `${baseUrl}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
+    // const baseUrl = URL;
+    // const redirectUrl = `${baseUrl}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
 
-    return res.redirect(redirectUrl);
+    // return res.redirect(redirectUrl);
+    return res.redirect(
+      `https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`
+    );
+
   } catch (err) {
     console.error('OAuth error:', err.response?.data || err.message);
     res.status(500).send('OAuth process failed.');
