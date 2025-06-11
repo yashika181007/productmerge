@@ -43,12 +43,10 @@
       font-family: monospace;
     }
   </style>
-  <!-- Shopify App Bridge + Polaris (optional) -->
+
+  <!-- Shopify App Bridge -->
   <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
   <script src="https://unpkg.com/@shopify/app-bridge-utils@3"></script>
-  <!-- Polaris can be included if you plan to use Polaris components -->
-  <script src="https://unpkg.com/@shopify/polaris@11.0.0/build/esm/index.js"></script>
-  <link href="https://unpkg.com/@shopify/polaris@11.0.0/build/esm/styles.css" rel="stylesheet">
 </head>
 
 <body>
@@ -63,34 +61,46 @@
 
   <div id="output"></div>
 
-  <!-- Shopify App Bridge Initialization -->
-  <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
-  <script src="https://unpkg.com/@shopify/app-bridge-utils@3"></script>
+  <!-- App Bridge Initialization + Token Fetch -->
   <script>
     document.addEventListener('DOMContentLoaded', async function () {
+      console.log('[AppBridge] DOM loaded');
+
       const AppBridge = window['app-bridge'];
       const createApp = AppBridge.default;
+      const hostParam = new URLSearchParams(location.search).get("host");
+      console.log('[AppBridge] Host param:', hostParam);
+
       const app = createApp({
         apiKey: "<%= SHOPIFY_API_KEY %>",
-        host: new URLSearchParams(location.search).get("host"),
+        host: hostParam,
         forceRedirect: true
       });
 
+      console.log('[AppBridge] App created:', app);
+
       const getSessionToken = AppBridge.utils.getSessionToken;
+      console.log('[AppBridge] getSessionToken:', getSessionToken);
+
       try {
         const token = await getSessionToken(app);
-        // Re-request the current page with token
+        console.log('[AppBridge] Session token received:', token);
+
         const url = new URL(window.location.href);
         url.searchParams.set("token", token);
-        window.location.href = url.toString();
+        const redirectUrl = url.toString();
+        console.log('[AppBridge] Redirecting with token:', redirectUrl);
+        window.location.href = redirectUrl;
       } catch (error) {
-        console.error("Failed to fetch session token:", error);
+        console.error('[AppBridge] Failed to fetch session token:', error);
       }
+
+      // Make app available globally for API calls
+      window.appBridge = { app, utils: AppBridge.utils };
     });
   </script>
 
-
-  <!-- API Call Logic with session token -->
+  <!-- API Buttons -->
   <script>
     const output = document.getElementById('output');
     const buttons = {
@@ -100,26 +110,38 @@
     };
 
     async function callApi(path, btn) {
+      console.log(`[API] Button clicked: ${path}`);
+
       try {
         btn.disabled = true;
         output.textContent = 'Loading...';
+        console.log('[API] Getting session token...');
+        const sessionToken = await window.appBridge.utils.getSessionToken(window.appBridge.app);
 
-        const sessionToken = await window.appBridge.utils.getSessionToken(app);
+        console.log('[API] Token:', sessionToken);
+        console.log('[API] Sending request to:', path);
+
         const res = await fetch(path, {
           headers: {
             Authorization: `Bearer ${sessionToken}`
           }
         });
 
+        console.log('[API] Response status:', res.status);
+
         if (!res.ok) {
           throw new Error(`HTTP ${res.status} - ${res.statusText}`);
         }
+
         const text = await res.text();
+        console.log('[API] Response text:', text);
         output.textContent = text;
       } catch (err) {
+        console.error('[API] Error:', err);
         output.textContent = 'Error: ' + err.message;
       } finally {
         btn.disabled = false;
+        console.log('[API] Request finished');
       }
     }
 
