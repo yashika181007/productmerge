@@ -1,5 +1,5 @@
-require('@shopify/shopify-api/adapters/node'); // Required before using shopifyApi
-const { shopifyApi } = require('@shopify/shopify-api');
+import '@shopify/shopify-api/adapters/node';
+import { shopifyApi } from '@shopify/shopify-api';
 
 const shopify = shopifyApi({
   apiKey: process.env.SHOPIFY_API_KEY,
