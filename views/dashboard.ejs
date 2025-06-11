@@ -111,33 +111,25 @@
       });
     }
 
-    async function callApi(path, btn) {
+    buttons.seed.addEventListener('click', () => callApi('/seed-products'));
+    buttons.sync.addEventListener('click', () => callApi('/sync-products'));
+    buttons.fetch.addEventListener('click', () => callApi('/fetch-orders'));
 
+    async function callApi(path) {
       console.log('path', path);
-      console.log('btn', btn);
       const { app, utils } = await waitForAppBridge();
-      console.log('app', app);
-      console.log('utils', utils);
-      console.log('[API] Getting session token...');
       const token = await utils.getSessionToken(app);
-      console.log('token', token);
       const res = await fetch(path, {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
-      console.log('res', res);
       const text = await res.text();
-      console.log('text', text);
       if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}\n\n${text}`);
-
       output.textContent = text;
     }
 
-    buttons.seed.addEventListener('click', () => callApi('/seed-products', buttons.seed));
-    buttons.sync.addEventListener('click', () => callApi('/sync-products', buttons.sync));
-    buttons.fetch.addEventListener('click', () => callApi('/fetch-orders', buttons.fetch));
   </script>
 
 </body>
