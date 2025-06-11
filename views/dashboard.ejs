@@ -51,7 +51,9 @@
 
 <body>
   <h1>🚀 Shipping Owl Dashboard</h1>
-  <p>Local products in DB: <strong><%= productCount %></strong></p>
+  <p>Local products in DB: <strong>
+      <%= productCount %>
+    </strong></p>
 
   <button id="seed">Seed Dummy Products</button>
   <button id="sync">Sync Products to Shopify</button>
@@ -59,33 +61,36 @@
 
   <div id="output"></div>
 
-  <!-- App Bridge Initialization -->
   <script>
-    document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('DOMContentLoaded', async function () {
       console.log('[AppBridge] DOM loaded');
 
       const AppBridge = window['app-bridge'];
       const createApp = AppBridge.default;
+
       const hostParam = new URLSearchParams(location.search).get("host");
-      console.log('[AppBridge] Host param:', hostParam);
+      if (!hostParam) {
+        console.error('[AppBridge] Missing host param in URL');
+        return;
+      }
 
       const app = createApp({
         apiKey: "<%= SHOPIFY_API_KEY %>",
         host: hostParam,
-        forceRedirect: true
+        forceRedirect: true,
       });
 
-      console.log('[AppBridge] App created:', app);
-
-      // Make appBridge globally available
+      // Store app and utils only once AppBridge is ready
       window.appBridge = {
         app,
         utils: AppBridge.utils
       };
+
+      console.log('[AppBridge] Initialized with app and utils');
     });
   </script>
 
-  <!-- Button Event Handlers -->
+
   <script>
     const output = document.getElementById('output');
     const buttons = {
@@ -94,31 +99,39 @@
       fetch: document.getElementById('fetch')
     };
 
-    async function callApi(path, btn) {
-      console.log(`[API] Button clicked: ${path}`);
+    async function waitForAppBridge() {
+      return new Promise((resolve) => {
+        const check = () => {
+          if (window.appBridge && window.appBridge.utils && window.appBridge.app) {
+            resolve(window.appBridge);
+          } else {
+            setTimeout(check, 100);
+          }
+        };
+        check();
+      });
+    }
 
+    async function callApi(path, btn) {
       try {
         btn.disabled = true;
         output.textContent = 'Loading...';
 
+        const { app, utils } = await waitForAppBridge();
+
         console.log('[API] Getting session token...');
-        const sessionToken = await window.appBridge.utils.getSessionToken(window.appBridge.app);
-        console.log('[API] Session token:', sessionToken);
+        const token = await utils.getSessionToken(app);
 
         const res = await fetch(path, {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${sessionToken}`
+            Authorization: `Bearer ${token}`
           }
         });
 
-        console.log('[API] Response status:', res.status);
         const text = await res.text();
-        console.log('[API] Response text:', text);
 
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status} - ${res.statusText}\n\n${text}`);
-        }
+        if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}\n\n${text}`);
 
         output.textContent = text;
       } catch (err) {
@@ -126,7 +139,6 @@
         output.textContent = 'Error: ' + err.message;
       } finally {
         btn.disabled = false;
-        console.log('[API] Request finished');
       }
     }
 
@@ -134,6 +146,7 @@
     buttons.sync.addEventListener('click', () => callApi('/sync-products', buttons.sync));
     buttons.fetch.addEventListener('click', () => callApi('/fetch-orders', buttons.fetch));
   </script>
+
 </body>
 
 </html>
