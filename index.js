@@ -46,28 +46,6 @@ app.use((req, res, next) => {
   next();
 });
 
-module.exports = async function verifySessionToken(req, res, next) {
-  try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.replace('Bearer ', '');
-    if (!token) return res.status(401).send('Missing token');
-
-    const session = await shopify.session.getCurrentSession({
-      rawRequest: req,
-      rawResponse: res,
-      isOnline: true,
-    });
-
-    if (!session) return res.status(403).send('Unauthorized');
-
-    req.shop = session.shop;
-    req.session = session;
-    next();
-  } catch (err) {
-    console.error('Session token verification failed:', err);
-    return res.status(403).send('Unauthorized');
-  }
-};
 app.get('/', (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.send('Missing shop parameter.');
@@ -217,6 +195,7 @@ app.get('/apps/shipping-owl', verifySessionToken, async (req, res) => {
     host,
     SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY // pass key to EJS
   });
+  
 });
 
 app.get('/dashboard', verifySessionToken, async (req, res) => {
