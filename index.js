@@ -9,7 +9,8 @@ const qs = require('qs');
 const path = require('path');
 
 // Middlewares
-const verifySessionToken = require('./middleware/verifySessionToken');
+import verifySessionToken from './middleware/verifySessionToken.js';
+
 const verifyShopifyWebhook = require('./middleware/verifyShopifyWebhook');
 
 const app = express();
