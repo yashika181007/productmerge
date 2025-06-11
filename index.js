@@ -241,67 +241,49 @@ app.get('/seed-products', async (req, res) => {
 });
 
 app.get('/sync-products', verifySessionToken, async (req, res) => {
-  const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
-  if (!installed) return res.status(400).send('No installed shop.');
+  try {
+    const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
+    if (!installed) return res.status(400).send('No installed shop.');
 
-  const shop = installed.shop;
-  const token = installed.access_token;
-  const [products] = await db.execute('SELECT * FROM products');
+    const shop = installed.shop;
+    const token = installed.access_token;
 
-  for (const product of products) {
-    // 1. Create Product with new input type and argument
-    const createProductMutation = `
-      mutation productCreate($input: ProductCreateInput!) {
-        productCreate(product: $input) {
-          product { id title }
-          userErrors { field message }
-        }
-      }`;
+    const [products] = await db.execute('SELECT * FROM products');
 
-    const productInput = {
-      title: product.title,
-      vendor: "Shipping Owl App",
-      productType: "Synced Product"
-    };
-
-    const createRes = await axios.post(
-      `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
-      {
-        query: createProductMutation,
-        variables: { input: productInput }
-      },
-      {
-        headers: {
-          'X-Shopify-Access-Token': token,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const productCreate = createRes.data.data?.productCreate;
-    if (!productCreate || productCreate.userErrors.length > 0) {
-      console.error('Product creation failed:', productCreate?.userErrors || createRes.data.errors);
-      continue;
-    }
-
-    const productId = productCreate.product.id;
-
-    // 2. Upload media if image URL is valid
-    if (product.image_url) {
-      const mediaMutation = `
-        mutation {
-          productCreateMedia(productId: "${productId}", media: [{
-            originalSource: "${product.image_url}", mediaContentType: IMAGE
-          }]) {
-            media { alt status }
-            mediaUserErrors { message }
+    for (const product of products) {
+      // 1. Create Product (with variant and image inline)
+      const createProductMutation = `
+        mutation productCreate($input: ProductCreateInput!) {
+          productCreate(input: $input) {
+            product {
+              id
+              title
+            }
+            userErrors {
+              field
+              message
+            }
           }
         }
       `;
 
-      const mediaRes = await axios.post(
+      const productInput = {
+        title: product.title,
+        vendor: "Shipping Owl App",
+        productType: "Synced Product",
+        variants: [{
+          price: product.price.toString(),
+          sku: product.sku
+        }],
+        images: product.image_url ? [{ src: product.image_url }] : []
+      };
+
+      const createRes = await axios.post(
         `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
-        { query: mediaMutation },
+        {
+          query: createProductMutation,
+          variables: { input: productInput }
+        },
         {
           headers: {
             'X-Shopify-Access-Token': token,
@@ -310,42 +292,21 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
         }
       );
 
-      const mediaErrors = mediaRes.data.data?.productCreateMedia?.mediaUserErrors || [];
-      if (mediaErrors.length > 0) {
-        console.error('Media upload errors:', mediaErrors);
+      const productCreate = createRes.data.data?.productCreate;
+
+      if (!productCreate || productCreate.userErrors.length > 0) {
+        console.error('Product creation failed:', productCreate?.userErrors || createRes.data.errors);
+        continue;
       }
+
+      console.log(`Created product: ${productCreate.product.title}`);
     }
 
-    // 3. Add variant
-    const variantMutation = `
-      mutation {
-        productVariantsBulkCreate(productId: "${productId}", variants: [{
-          price: "${product.price}", sku: "${product.sku}"
-        }]) {
-          product { id }
-          userErrors { field message }
-        }
-      }
-    `;
-
-    const variantRes = await axios.post(
-      `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
-      { query: variantMutation },
-      {
-        headers: {
-          'X-Shopify-Access-Token': token,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const variantErrors = variantRes.data.data?.productVariantsBulkCreate?.userErrors || [];
-    if (variantErrors.length > 0) {
-      console.error('Variant creation errors:', variantErrors);
-    }
+    res.send(`Synced ${products.length} products.`);
+  } catch (error) {
+    console.error('Error syncing products:', error.message);
+    res.status(500).send('Something went wrong while syncing products.');
   }
-
-  res.send(`Synced ${products.length} products.`);
 });
 
 app.get('/fetch-orders', verifySessionToken, async (req, res) => {
