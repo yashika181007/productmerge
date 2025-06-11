@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,7 +10,6 @@
       background: #f6f6f7;
       padding: 2rem;
     }
-
     button {
       background: #5c6ac4;
       color: white;
@@ -23,16 +21,13 @@
       cursor: pointer;
       transition: background-color 0.2s ease;
     }
-
     button:disabled {
       background: #a0a5d6;
       cursor: not-allowed;
     }
-
     button:hover:not(:disabled) {
       background-color: #4b56a3;
     }
-
     #output {
       margin-top: 1.5rem;
       white-space: pre-wrap;
@@ -43,18 +38,16 @@
       font-family: monospace;
     }
   </style>
-  <title>Shipping Owl App</title>
+  <!-- Shopify App Bridge + Polaris (optional) -->
   <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
   <script src="https://unpkg.com/@shopify/app-bridge-utils@3"></script>
-  <script src="https://unpkg.com/@shopify/polaris@11.0.0/build/esm/index.js"></script>
-  <link href="https://unpkg.com/@shopify/polaris@11.0.0/build/esm/styles.css" rel="stylesheet">
+  <!-- Polaris can be included if you plan to use Polaris components -->
+  <!-- <script src="https://unpkg.com/@shopify/polaris@11.0.0/build/esm/index.js"></script>
+  <link href="https://unpkg.com/@shopify/polaris@11.0.0/build/esm/styles.css" rel="stylesheet"> -->
 </head>
-
 <body>
   <h1>🚀 Shipping Owl Dashboard</h1>
-  <p>Local products in DB: <strong>
-      <%= productCount %>
-    </strong></p>
+  <p>Local products in DB: <strong><%= productCount %></strong></p>
 
   <button id="seed">Seed Dummy Products</button>
   <button id="sync">Sync Products to Shopify</button>
@@ -62,7 +55,22 @@
 
   <div id="output"></div>
 
+  <!-- Shopify App Bridge Initialization -->
   <script>
+    const AppBridge = window.appBridge;
+    const createApp = AppBridge.default;
+    const actions = AppBridge.actions;
+    const app = createApp({
+      apiKey: '<%= SHOPIFY_API_KEY %>',
+      host: '<%= host %>'
+    });
+    const TitleBar = actions.TitleBar;
+    TitleBar.create(app, { title: 'Shipping Owl Dashboard' });
+  </script>
+
+  <!-- API Call Logic with session token -->
+  <script>
+    const output = document.getElementById('output');
     const buttons = {
       seed: document.getElementById('seed'),
       sync: document.getElementById('sync'),
@@ -73,7 +81,14 @@
       try {
         btn.disabled = true;
         output.textContent = 'Loading...';
-        const res = await fetch(path);
+
+        const sessionToken = await window.appBridge.utils.getSessionToken(app);
+        const res = await fetch(path, {
+          headers: {
+            Authorization: `Bearer ${sessionToken}`
+          }
+        });
+
         if (!res.ok) {
           throw new Error(`HTTP ${res.status} - ${res.statusText}`);
         }
@@ -86,33 +101,9 @@
       }
     }
 
-    const output = document.getElementById('output');
-
     buttons.seed.addEventListener('click', () => callApi('/seed-products', buttons.seed));
     buttons.sync.addEventListener('click', () => callApi('/sync-products', buttons.sync));
     buttons.fetch.addEventListener('click', () => callApi('/fetch-orders', buttons.fetch));
   </script>
-
-  <!-- Shopify App Bridge -->
-  <script>
-    const AppBridge = window['app-bridge'];
-    const createApp = AppBridge.default;
-    const app = createApp({
-      apiKey: '<%= SHOPIFY_API_KEY %>', // ✅ fixed
-      shopOrigin: '<%= shop %>',
-      host: '<%= host %>',
-      forceRedirect: true,
-    });
-
-    const TitleBar = AppBridge.actions.TitleBar;
-    TitleBar.create(app, { title: 'Shipping Owl Dashboard' });
-  </script>
-
-
-  <script>
-    console.log('HOST param:', new URLSearchParams(window.location.search).get('host'));
-  </script>
-
 </body>
-
 </html>

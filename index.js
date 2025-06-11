@@ -1,11 +1,16 @@
 require('dotenv').config();
 const express = require('express');
-const { shopifyApi, MemorySessionStorage } = require('@shopify/shopify-api');
+const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const qs = require('qs');
+const path = require('path');
+
+// Middlewares
+const verifySessionToken = require('./middleware/verifySessionToken');
+const verifyShopifyWebhook = require('./middleware/verifyShopifyWebhook');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,7 +34,6 @@ const rawBodySaver = (req, res, buf) => {
     req.rawBody = buf.toString('utf8');
   }
 };
-
 app.use(bodyParser.json({ verify: rawBodySaver }));
 app.use(bodyParser.urlencoded({ extended: true, verify: rawBodySaver }));
 
@@ -42,30 +46,28 @@ app.use((req, res, next) => {
   next();
 });
 
-function verifyShopifyWebhook(req, res, next) {
-  const hmac = req.headers['x-shopify-hmac-sha256'];
-  const rawBody = req.rawBody;
-  const secret = process.env.SHOPIFY_API_SECRET;
-
-  const hash = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody, 'utf8')
-    .digest('base64');
-
-  if (hash !== hmac) {
-    console.warn('❌ Webhook HMAC validation failed.');
-    return res.status(401).send('Unauthorized');
-  }
-
+module.exports = async function verifySessionToken(req, res, next) {
   try {
-    req.body = JSON.parse(rawBody);
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace('Bearer ', '');
+    if (!token) return res.status(401).send('Missing token');
+
+    const session = await shopify.session.getCurrentSession({
+      rawRequest: req,
+      rawResponse: res,
+      isOnline: true,
+    });
+
+    if (!session) return res.status(403).send('Unauthorized');
+
+    req.shop = session.shop;
+    req.session = session;
+    next();
   } catch (err) {
-    return res.status(400).send('Invalid JSON');
+    console.error('Session token verification failed:', err);
+    return res.status(403).send('Unauthorized');
   }
-
-  next();
-}
-
+};
 app.get('/', (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.send('Missing shop parameter.');
@@ -203,11 +205,11 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-app.get('/apps/shipping-owl', async (req, res) => {
+app.get('/apps/shipping-owl', verifySessionToken, async (req, res) => {
   const { shop, host } = req.query;
   if (!shop || !host) return res.send('Missing shop or host.');
-console.log(shop);
-console.log(host);
+  console.log(shop);
+  console.log(host);
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
   res.render('dashboard', {
     productCount: count,
@@ -217,22 +219,7 @@ console.log(host);
   });
 });
 
-app.post('/webhook/shop/redact', verifyShopifyWebhook, (req, res) => {
-  console.log('✅ SHOP_REDACT webhook verified');
-  res.status(200).send('Webhook received');
-});
-
-app.post('/webhook/customers/redact', verifyShopifyWebhook, (req, res) => {
-  console.log('✅ CUSTOMERS_REDACT webhook verified');
-  res.status(200).send('Webhook received');
-});
-
-app.post('/webhook/customers/data_request', verifyShopifyWebhook, (req, res) => {
-  console.log('✅ CUSTOMERS_DATA_REQUEST webhook verified');
-  res.status(200).send('Webhook received');
-});
-
-app.get('/dashboard', async (req, res) => {
+app.get('/dashboard', verifySessionToken, async (req, res) => {
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
   res.render('dashboard', { productCount: count });
 });
@@ -253,7 +240,7 @@ app.get('/seed-products', async (req, res) => {
   res.send('Dummy products inserted.');
 });
 
-app.get('/sync-products', async (req, res) => {
+app.get('/sync-products', verifySessionToken, async (req, res) => {
   const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
   if (!installed) return res.status(400).send('No installed shop.');
 
@@ -361,7 +348,7 @@ app.get('/sync-products', async (req, res) => {
   res.send(`Synced ${products.length} products.`);
 });
 
-app.get('/fetch-orders', async (req, res) => {
+app.get('/fetch-orders', verifySessionToken, async (req, res) => {
   console.log('--- /fetch-orders called ---');
 
   try {
@@ -528,7 +515,7 @@ app.get('/fetch-orders', async (req, res) => {
   }
 });
 
-app.post('/webhook/app/uninstalled', bodyParser.raw({ type: 'application/json' }), async (req, res) => {
+app.post('/webhook/app/uninstalled', verifyShopifyWebhook, bodyParser.raw({ type: 'application/json' }), async (req, res) => {
   const hmacHeader = req.headers['x-shopify-hmac-sha256'];
   const rawBody = req.body;
   const hash = crypto.createHmac('sha256', SHOPIFY_API_SECRET).update(rawBody).digest('base64');
