@@ -116,19 +116,42 @@
     buttons.fetch.addEventListener('click', () => callApi('/fetch-orders'));
 
     async function callApi(path) {
-      console.log('path', path);
-      const { app, utils } = await waitForAppBridge();
-      const token = await utils.getSessionToken(app);
-      const res = await fetch(path, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`
+      try {
+        console.log('🔹 Calling API Path:', path);
+
+        const { app, utils } = await waitForAppBridge();
+        console.log('✅ AppBridge loaded:', app);
+
+        const token = await utils.getSessionToken(app);
+        console.log('🛡️ Session Token:', token);
+
+        const res = await fetch(path, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        const text = await res.text();
+
+        console.log('📦 Raw Response Text:', text);
+        console.log('📡 Status:', res.status, res.statusText);
+        console.log('📄 Headers:', [...res.headers.entries()]);
+
+        if (!res.ok) {
+          console.error('❌ HTTP Error:', res.status, res.statusText, '\n\n', text);
+          throw new Error(`HTTP ${res.status} - ${res.statusText}\n\n${text}`);
         }
-      });
-      const text = await res.text();
-      if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}\n\n${text}`);
-      output.textContent = text;
+
+        output.textContent = text;
+        console.log('✅ Output set successfully.');
+
+      } catch (err) {
+        console.error('🔥 Error in callApi:', err);
+        output.textContent = '❌ Error: ' + err.message;
+      }
     }
+
 
   </script>
 
