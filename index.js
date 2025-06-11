@@ -184,7 +184,7 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-app.get('/apps/shipping-owl', verifySessionToken, async (req, res) => {
+app.get('/apps/shipping-owl', async (req, res) => {
   const { shop, host } = req.query;
   if (!shop || !host) return res.send('Missing shop or host.');
   console.log(shop);
