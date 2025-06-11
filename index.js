@@ -203,12 +203,12 @@ app.get('/apps/shipping-owl', async (req, res) => {
   });
 });
 
-app.get('/dashboard', verifySessionToken, async (req, res) => {
+app.get('/dashboard', async (req, res) => {
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
   res.render('dashboard', { productCount: count });
 });
 
-app.get('/seed-products', verifySessionToken, async (req, res) => {
+app.get('/seed-products', async (req, res) => {
 
   const baseUrl = URL;
   const dummy = [
@@ -223,7 +223,7 @@ app.get('/seed-products', verifySessionToken, async (req, res) => {
   res.send('Dummy products inserted.');
 });
 
-app.get('/sync-products', verifySessionToken, async (req, res) => {
+app.get('/sync-products', async (req, res) => {
   try {
     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
     if (!installed) return res.status(400).send('No installed shop.');
