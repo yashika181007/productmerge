@@ -40,7 +40,13 @@ app.use(bodyParser.urlencoded({ extended: true, verify: rawBodySaver }));
 
 app.use((req, res, next) => {
   const shop = req.query.shop || req.headers['x-shopify-shop-domain'];
-  res.setHeader("Content-Security-Policy", `frame-ancestors https://${shop} https://admin.shopify.com;`);
+  let frameAncestors = `https://admin.shopify.com`;
+
+  if (shop) {
+    frameAncestors += ` https://${shop}`;
+  }
+
+  res.setHeader("Content-Security-Policy", `frame-ancestors ${frameAncestors};`);
   next();
 });
 
@@ -203,6 +209,7 @@ app.get('/dashboard', verifySessionToken, async (req, res) => {
 });
 
 app.get('/seed-products', verifySessionToken, async (req, res) => {
+
   const baseUrl = URL;
   const dummy = [
     ['SKU-RED-011', 'Red1 T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],

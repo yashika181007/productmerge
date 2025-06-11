@@ -13,7 +13,7 @@ const shopify = shopifyApi({
 module.exports = async function verifySessionToken(req, res, next) {
     try {
         const token = req.headers.authorization?.replace('Bearer ', '');
-        console.log(token);
+        console.log('token',token);
         if (!token) throw new Error('Missing session token');
 
         const session = await shopify.api.session.decodeSessionToken(token);
