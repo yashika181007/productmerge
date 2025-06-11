@@ -171,14 +171,10 @@ app.get('/callback', async (req, res) => {
       }
     });
     const cleanedShop = shopData.myshopify_domain;
-    // const baseUrl = URL;
-    // const redirectUrl = `${baseUrl}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
+    const baseUrl = URL;
+    const redirectUrl = `${baseUrl}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
 
-    // return res.redirect(redirectUrl);
-    return res.redirect(
-      `https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/shipping-owl?host=${host}`
-    );
-
+    return res.redirect(redirectUrl);
   } catch (err) {
     console.error('OAuth error:', err.response?.data || err.message);
     res.status(500).send('OAuth process failed.');
