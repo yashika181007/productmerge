@@ -195,6 +195,7 @@ app.get('/callback', async (req, res) => {
     const cleanedShop = shopData.myshopify_domain;
     const baseUrl = URL;
     const redirectUrl = `${baseUrl}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
+
     return res.redirect(redirectUrl);
   } catch (err) {
     console.error('OAuth error:', err.response?.data || err.message);
@@ -205,7 +206,8 @@ app.get('/callback', async (req, res) => {
 app.get('/apps/shipping-owl', async (req, res) => {
   const { shop, host } = req.query;
   if (!shop || !host) return res.send('Missing shop or host.');
-
+console.log(shop);
+console.log(host);
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
   res.render('dashboard', {
     productCount: count,
@@ -260,10 +262,10 @@ app.get('/sync-products', async (req, res) => {
   const [products] = await db.execute('SELECT * FROM products');
 
   for (const product of products) {
-    // 1. Create Product
+    // 1. Create Product with new input type and argument
     const createProductMutation = `
-      mutation productCreate($input: ProductInput!) {
-        productCreate(input: $input) {
+      mutation productCreate($input: ProductCreateInput!) {
+        productCreate(product: $input) {
           product { id title }
           userErrors { field message }
         }
@@ -299,20 +301,20 @@ app.get('/sync-products', async (req, res) => {
 
     // 2. Upload media if image URL is valid
     if (product.image_url) {
+      const mediaMutation = `
+        mutation {
+          productCreateMedia(productId: "${productId}", media: [{
+            originalSource: "${product.image_url}", mediaContentType: IMAGE
+          }]) {
+            media { alt status }
+            mediaUserErrors { message }
+          }
+        }
+      `;
+
       const mediaRes = await axios.post(
         `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
-        {
-          query: `
-            mutation {
-              productCreateMedia(productId: "${productId}", media: [{
-                originalSource: "${product.image_url}", mediaContentType: IMAGE
-              }]) {
-                media { alt status }
-                mediaUserErrors { message }
-              }
-            }
-          `
-        },
+        { query: mediaMutation },
         {
           headers: {
             'X-Shopify-Access-Token': token,
@@ -328,20 +330,20 @@ app.get('/sync-products', async (req, res) => {
     }
 
     // 3. Add variant
+    const variantMutation = `
+      mutation {
+        productVariantsBulkCreate(productId: "${productId}", variants: [{
+          price: "${product.price}", sku: "${product.sku}"
+        }]) {
+          product { id }
+          userErrors { field message }
+        }
+      }
+    `;
+
     const variantRes = await axios.post(
       `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
-      {
-        query: `
-          mutation {
-            productVariantsBulkCreate(productId: "${productId}", variants: [{
-              price: "${product.price}", sku: "${product.sku}"
-            }]) {
-              product { id }
-              userErrors { field message }
-            }
-          }
-        `
-      },
+      { query: variantMutation },
       {
         headers: {
           'X-Shopify-Access-Token': token,
