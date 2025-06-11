@@ -80,7 +80,6 @@
         forceRedirect: true,
       });
 
-      // Store app and utils only once AppBridge is ready
       window.appBridge = {
         app,
         utils: AppBridge.utils
@@ -118,19 +117,20 @@
         output.textContent = 'Loading...';
 
         const { app, utils } = await waitForAppBridge();
-
+        console.log('app', app);
+        console.log('utils', utils);
         console.log('[API] Getting session token...');
         const token = await utils.getSessionToken(app);
-
+        console.log('token', token);
         const res = await fetch(path, {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${token}`
           }
         });
-
+        console.log('res', res);
         const text = await res.text();
-
+        console.log('text', text);
         if (!res.ok) throw new Error(`HTTP ${res.status} - ${res.statusText}\n\n${text}`);
 
         output.textContent = text;

@@ -148,30 +148,30 @@ app.get('/callback', async (req, res) => {
         userId
       ]
     );
-    await axios.post(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
-      query: `mutation {
-    webhookSubscriptionCreate(
-      topic: APP_UNINSTALLED,
-      webhookSubscription: {
-        callbackUrl: "${URL}/webhooks/app-uninstalled",
-        format: JSON
-      }
-    ) {
-      webhookSubscription {
-        id
-      }
-      userErrors {
-        field
-        message
-      }
-    }
-  }`
-    }, {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
-      }
-    });
+  //   await axios.post(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+  //     query: `mutation {
+  //   webhookSubscriptionCreate(
+  //     topic: APP_UNINSTALLED,
+  //     webhookSubscription: {
+  //       callbackUrl: "${URL}/webhooks/app-uninstalled",
+  //       format: JSON
+  //     }
+  //   ) {
+  //     webhookSubscription {
+  //       id
+  //     }
+  //     userErrors {
+  //       field
+  //       message
+  //     }
+  //   }
+  // }`
+  //   }, {
+  //     headers: {
+  //       'X-Shopify-Access-Token': accessToken,
+  //       'Content-Type': 'application/json'
+  //     }
+  //   });
     const cleanedShop = shopData.myshopify_domain;
     const baseUrl = URL;
     const redirectUrl = `${baseUrl}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
@@ -454,13 +454,13 @@ app.get('/fetch-orders', verifySessionToken, async (req, res) => {
   }
 });
 
-app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => {
-  const shop = req.headers['x-shopify-shop-domain'];
-  if (shop) {
-    await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
-    console.log(`App uninstalled for shop: ${shop}`);
-  }
-  res.status(200).send('Received');
-});
+// app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => {
+//   const shop = req.headers['x-shopify-shop-domain'];
+//   if (shop) {
+//     await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
+//     console.log(`App uninstalled for shop: ${shop}`);
+//   }
+//   res.status(200).send('Received');
+// });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
