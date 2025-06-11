@@ -9,8 +9,7 @@ const qs = require('qs');
 const path = require('path');
 
 // Middlewares
-import verifySessionToken from './middleware/verifySessionToken.js';
-
+const verifySessionToken = require('./middleware/verifySessionToken');
 const verifyShopifyWebhook = require('./middleware/verifyShopifyWebhook');
 
 const app = express();
@@ -28,8 +27,9 @@ const db = mysql.createPool({
 });
 
 app.set('view engine', 'ejs');
-app.set('views', __dirname + '/views');
-app.use(express.static(__dirname + '/public'));
+app.set('views', path.join(__dirname, 'views'));
+app.use(express.static(path.join(__dirname, 'public')));
+
 const rawBodySaver = (req, res, buf) => {
   if (buf && buf.length) {
     req.rawBody = buf.toString('utf8');
