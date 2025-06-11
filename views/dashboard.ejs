@@ -51,9 +51,7 @@
 
 <body>
   <h1>🚀 Shipping Owl Dashboard</h1>
-  <p>Local products in DB: <strong>
-      <%= productCount %>
-    </strong></p>
+  <p>Local products in DB: <strong><%= productCount %></strong></p>
 
   <button id="seed">Seed Dummy Products</button>
   <button id="sync">Sync Products to Shopify</button>
@@ -61,9 +59,9 @@
 
   <div id="output"></div>
 
-  <!-- App Bridge Initialization + Token Fetch -->
+  <!-- App Bridge Initialization -->
   <script>
-    document.addEventListener('DOMContentLoaded', async function () {
+    document.addEventListener('DOMContentLoaded', function () {
       console.log('[AppBridge] DOM loaded');
 
       const AppBridge = window['app-bridge'];
@@ -79,28 +77,15 @@
 
       console.log('[AppBridge] App created:', app);
 
-      const getSessionToken = AppBridge.utils.getSessionToken;
-      console.log('[AppBridge] getSessionToken:', getSessionToken);
-
-      try {
-        const token = await getSessionToken(app);
-        console.log('[AppBridge] Session token received:', token);
-
-        const url = new URL(window.location.href);
-        url.searchParams.set("token", token);
-        const redirectUrl = url.toString();
-        console.log('[AppBridge] Redirecting with token:', redirectUrl);
-        window.location.href = redirectUrl;
-      } catch (error) {
-        console.error('[AppBridge] Failed to fetch session token:', error);
-      }
-
-      // Make app available globally for API calls
-      window.appBridge = { app, utils: AppBridge.utils };
+      // Make appBridge globally available
+      window.appBridge = {
+        app,
+        utils: AppBridge.utils
+      };
     });
   </script>
 
-  <!-- API Buttons -->
+  <!-- Button Event Handlers -->
   <script>
     const output = document.getElementById('output');
     const buttons = {
@@ -115,26 +100,26 @@
       try {
         btn.disabled = true;
         output.textContent = 'Loading...';
+
         console.log('[API] Getting session token...');
         const sessionToken = await window.appBridge.utils.getSessionToken(window.appBridge.app);
-
-        console.log('[API] Token:', sessionToken);
-        console.log('[API] Sending request to:', path);
+        console.log('[API] Session token:', sessionToken);
 
         const res = await fetch(path, {
+          method: 'GET',
           headers: {
             Authorization: `Bearer ${sessionToken}`
           }
         });
 
         console.log('[API] Response status:', res.status);
-
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status} - ${res.statusText}`);
-        }
-
         const text = await res.text();
         console.log('[API] Response text:', text);
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} - ${res.statusText}\n\n${text}`);
+        }
+
         output.textContent = text;
       } catch (err) {
         console.error('[API] Error:', err);
