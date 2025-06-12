@@ -193,6 +193,8 @@ app.get('/callback', async (req, res) => {
 
 app.get('/apps/shipping-owl', async (req, res) => {
   const { shop, host } = req.query;
+  const frameAncestors = `frame-ancestors https://admin.shopify.com https://${shop}`;
+  res.setHeader("Content-Security-Policy", frameAncestors);
 
   if (!shop || !host) {
     return res.send('Missing shop or host.');

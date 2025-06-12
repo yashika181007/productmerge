@@ -51,9 +51,11 @@
 
 <body>
   <h1>🚀 Shipping Owl Dashboard</h1>
-  <p>Local products in DB: <strong>
-      <%= productCount %>
-    </strong></p>
+  <p>Local products in DB: <strong><%= productCount %></strong></p>
+
+  <script>
+    console.log("🧮 EJS productCount rendered:", "<%= productCount %>");
+  </script>
 
   <button id="seed">Seed Dummy Products</button>
   <button id="sync">Sync Products to Shopify</button>
@@ -69,6 +71,8 @@
       const createApp = AppBridge.default;
 
       const hostParam = new URLSearchParams(location.search).get("host");
+      console.log('[AppBridge] Host param:', hostParam);
+
       if (!hostParam) {
         console.error('[AppBridge] Missing host param in URL');
         return;
@@ -85,10 +89,9 @@
         utils: AppBridge.utils
       };
 
-      console.log('[AppBridge] Initialized with app and utils');
+      console.log('[AppBridge] Initialized successfully:', window.appBridge);
     });
   </script>
-
 
   <script>
     const output = document.getElementById('output');
@@ -98,10 +101,15 @@
       fetch: document.getElementById('fetch')
     };
 
+    console.log("🔘 Buttons initialized:", buttons);
+    console.log("📤 Output element:", output);
+
     async function waitForAppBridge() {
+      console.log('⏳ Waiting for AppBridge to be ready...');
       return new Promise((resolve) => {
         const check = () => {
           if (window.appBridge && window.appBridge.utils && window.appBridge.app) {
+            console.log('✅ AppBridge is ready');
             resolve(window.appBridge);
           } else {
             setTimeout(check, 100);
@@ -111,21 +119,31 @@
       });
     }
 
-    buttons.seed.addEventListener('click', () => callApi('/seed-products'));
-    buttons.sync.addEventListener('click', () => callApi('/sync-products'));
-    buttons.fetch.addEventListener('click', () => callApi('/fetch-orders'));
+    buttons.seed.addEventListener('click', () => {
+      console.log('🧪 Seed button clicked');
+      callApi('/seed-products');
+    });
+
+    buttons.sync.addEventListener('click', () => {
+      console.log('🔄 Sync button clicked');
+      callApi('/sync-products');
+    });
+
+    buttons.fetch.addEventListener('click', () => {
+      console.log('📥 Fetch button clicked');
+      callApi('/fetch-orders');
+    });
 
     async function callApi(path) {
       try {
-        console.log('🔹 Calling API Path:', path);
+        console.log('🚀 Starting API Call to:', path);
 
         const { app, utils } = await waitForAppBridge();
-        console.log('✅ AppBridge loaded:', app);
+        console.log('🔧 Resolved AppBridge:', { app, utils });
 
-        // const token = await utils.getSessionToken(app);
-        // console.log('🛡️ Session Token:', token);
         let token;
         try {
+          console.log('🔐 Getting session token...');
           token = await utils.getSessionToken(app);
           console.log('🛡️ Session Token:', token);
         } catch (tokenErr) {
@@ -133,6 +151,10 @@
           output.textContent = '❌ Failed to get session token.';
           return;
         }
+
+        console.log('📤 Sending fetch to:', path);
+        console.log('📤 Headers:', { Authorization: `Bearer ${token}` });
+
         const res = await fetch(path, {
           method: 'GET',
           headers: {
@@ -140,11 +162,11 @@
           }
         });
 
-        const text = await res.text();
-
-        console.log('📦 Raw Response Text:', text);
         console.log('📡 Status:', res.status, res.statusText);
-        console.log('📄 Headers:', [...res.headers.entries()]);
+        console.log('📄 Response Headers:', [...res.headers.entries()]);
+
+        const text = await res.text();
+        console.log('📦 Response Text:', text);
 
         if (!res.ok) {
           console.error('❌ HTTP Error:', res.status, res.statusText, '\n\n', text);
@@ -153,16 +175,22 @@
 
         output.textContent = text;
         console.log('✅ Output set successfully.');
-
       } catch (err) {
         console.error('🔥 Error in callApi:', err);
+        console.error('🔥 Error stack:', err.stack || err);
         output.textContent = '❌ Error: ' + err.message;
       }
     }
 
+    // Global JS error logger
+    window.addEventListener('error', function (e) {
+      console.error('⚠️ Global JS Error:', e.message, '\n', e.error);
+    });
 
+    window.addEventListener('unhandledrejection', function (e) {
+      console.error('⚠️ Unhandled Promise Rejection:', e.reason);
+    });
   </script>
-
 </body>
 
 </html>
