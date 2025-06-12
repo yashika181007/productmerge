@@ -374,8 +374,20 @@ app.get('/sync-products', async (req, res) => {
         }
       );
 
-      const createdProduct = createProductResponse.data?.data?.productCreate?.product;
-      const userErrors = createProductResponse.data?.data?.productCreate?.userErrors;
+      const responseData = createProductResponse.data;
+      const productCreate = responseData?.data?.productCreate;
+      const createdProduct = productCreate?.product;
+      const userErrors = productCreate?.userErrors;
+
+      console.log('createProductResponse.data', responseData);
+      console.log('productCreate', productCreate);
+      console.log('createdProduct', createdProduct);
+      console.log('userErrors', userErrors);
+
+      if (!createdProduct || (userErrors && userErrors.length)) {
+        console.error('❌ Product creation failed:', JSON.stringify(userErrors, null, 2));
+        continue;
+      }
 
       if (!createdProduct || (userErrors && userErrors.length)) {
         console.error('❌ Product creation failed:', JSON.stringify(userErrors, null, 2));
