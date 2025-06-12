@@ -245,88 +245,63 @@ app.get('/sync-products', async (req, res) => {
 
     const client = new shopify.clients.Graphql({ session });
 
-    const staticProducts = [
-      {
-        title: "Red1 T-Shirt",
-        description: "A bright red cotton tee",
-        image_url: "https://yourdomain.com/images/red-tshirt.jpg",
-        price: "19.99",
-        sku: "SKU-RED-011"
-      },
-      {
-        title: "Blue1 Jeans",
-        description: "Classic blue denim jeans",
-        image_url: "https://yourdomain.com/images/blue-jeans.jpg",
-        price: "49.99",
-        sku: "SKU-BLU-021"
-      },
-      {
-        title: "Green1 Hoodie",
-        description: "Cozy green hoodie",
-        image_url: "https://yourdomain.com/images/green-hoodie.jpg",
-        price: "39.99",
-        sku: "SKU-GRN-031"
-      },
-    ];
+    const [products] = await db.execute('SELECT * FROM products');
 
     let createdCount = 0;
 
-    for (const product of staticProducts) {
-      const mutation = `
-        mutation productCreate($input: ProductCreateInput!) {
-          productCreate(input: $input) {
-            product {
-              id
-              title
-            }
-            userErrors {
-              field
-              message
-            }
-          }
-        }
-      `;
-
-      const variables = {
-        input: {
-          title: product.title,
-          descriptionHtml: product.description,
-          variants: [
-            {
-              price: product.price,
-              sku: product.sku
-            }
-          ],
-          images: [
-            {
-              src: product.image_url
-            }
-          ]
-        }
-      };
-
-      const response = await client.query({
-        data: {
-          query: mutation,
-          variables,
-        },
-      });
-
-      const result = response.body.data.productCreate;
-
-      if (result.userErrors.length) {
-        console.error(`❌ Failed to create ${product.title}:`, result.userErrors);
-        continue;
-      }
-
-      console.log(`✅ Created: ${result.product.title}`);
-      createdCount++;
+    function gqlEscape(str) {
+      return String(str)
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n');
     }
 
-    res.send(`✅ Created ${createdCount} static products in Shopify.`);
+    for (const product of products) {
+      try {
+        const title = gqlEscape(product.title || "Untitled");
+        const description = gqlEscape(product.description || "");
+
+        const mutation = `
+          mutation {
+            productCreate(product: {
+              title: "${title}",
+              descriptionHtml: "${description}",
+              vendor: "My Vendor",
+              productType: "General"
+            }) {
+              product {
+                id
+                title
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `;
+
+        const response = await client.query({ data: mutation });
+
+        const result = response.body.data.productCreate;
+
+        if (result.userErrors.length) {
+          console.error(`❌ Product create errors for "${product.title}":`, result.userErrors);
+          continue;
+        }
+
+        console.log(`✅ Created product: ${result.product.title}`);
+        createdCount++;
+
+      } catch (err) {
+        console.error(`❌ Other Error while creating "${product.title}":`, err.message || err);
+      }
+    }
+
+    res.send(`✅ Synced ${createdCount} of ${products.length} products.`);
   } catch (err) {
-    console.error('❌ Critical error:', err.message || err);
-    res.status(500).send('Failed to create static products.');
+    console.error('❌ Critical /sync-products error:', err.message || err);
+    res.status(500).send('Internal Server Error');
   }
 });
 
