@@ -240,10 +240,10 @@ app.get('/sync-products', async (req, res) => {
     const [products] = await db.execute('SELECT * FROM products');
 
     for (const product of products) {
-      // 1. Create Product (with variant and image inline)
+      // Step 1: Create product with variants
       const createProductMutation = `
-        mutation productCreate($input: ProductCreateInput!) {
-          productCreate(input: $input) {
+        mutation productCreateWithVariants($product: ProductInput!, $variants: [ProductVariantInput!]!) {
+          productCreateWithVariants(product: $product, variants: $variants) {
             product {
               id
               title
@@ -259,19 +259,22 @@ app.get('/sync-products', async (req, res) => {
       const productInput = {
         title: product.title,
         vendor: "Shipping Owl App",
-        productType: "Synced Product",
-        variants: [{
-          price: product.price.toString(),
-          sku: product.sku
-        }],
-        images: product.image_url ? [{ src: product.image_url }] : []
+        productType: "Synced Product"
       };
+
+      const variantsInput = [{
+        price: product.price.toString(),
+        sku: product.sku
+      }];
 
       const createRes = await axios.post(
         `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
         {
           query: createProductMutation,
-          variables: { input: productInput }
+          variables: {
+            product: productInput,
+            variants: variantsInput
+          }
         },
         {
           headers: {
@@ -281,14 +284,67 @@ app.get('/sync-products', async (req, res) => {
         }
       );
 
-      const productCreate = createRes.data.data?.productCreate;
+      const productCreate = createRes.data.data?.productCreateWithVariants;
 
       if (!productCreate || productCreate.userErrors.length > 0) {
         console.error('Product creation failed:', productCreate?.userErrors || createRes.data.errors);
         continue;
       }
 
+      const createdProductId = productCreate.product.id;
       console.log(`Created product: ${productCreate.product.title}`);
+
+      // Step 2: (Optional) Upload image if present
+      if (product.image_url) {
+        const createMediaMutation = `
+          mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+            productCreateMedia(productId: $productId, media: $media) {
+              media {
+                ... on MediaImage {
+                  id
+                  image {
+                    originalSrc
+                  }
+                }
+              }
+              mediaUserErrors {
+                field
+                message
+              }
+            }
+          }
+        `;
+
+        const mediaInput = [{
+          originalSource: product.image_url,
+          mediaContentType: "IMAGE",
+          alt: product.title
+        }];
+
+        const mediaRes = await axios.post(
+          `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
+          {
+            query: createMediaMutation,
+            variables: {
+              productId: createdProductId,
+              media: mediaInput
+            }
+          },
+          {
+            headers: {
+              'X-Shopify-Access-Token': token,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const mediaErrors = mediaRes.data.data?.productCreateMedia?.mediaUserErrors;
+        if (mediaErrors && mediaErrors.length > 0) {
+          console.warn(`Media upload failed for product ${product.title}:`, mediaErrors);
+        } else {
+          console.log(`Image uploaded for product: ${product.title}`);
+        }
+      }
     }
 
     res.send(`Synced ${products.length} products.`);
