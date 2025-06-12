@@ -230,10 +230,13 @@ app.get('/seed-products', async (req, res) => {
   );
   res.send('Dummy products inserted.');
 });
-
 app.get('/sync-products', async (req, res) => {
   try {
+    console.log('🔄 Starting /sync-products...');
+
     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
+    console.log('🛍️ Installed shop info:', installed);
+
     if (!installed) return res.status(400).send('No installed shop.');
 
     const session = new Session({
@@ -242,10 +245,13 @@ app.get('/sync-products', async (req, res) => {
       accessToken: installed.access_token,
       isOnline: false,
     });
+    console.log('🔐 Session created:', session);
 
     const client = new shopify.clients.Graphql({ session });
+    console.log('📡 GraphQL client initialized');
 
     const [products] = await db.execute('SELECT * FROM products');
+    console.log(`📦 Found ${products.length} products in DB.`);
 
     let createdCount = 0;
 
@@ -257,6 +263,7 @@ app.get('/sync-products', async (req, res) => {
     }
 
     for (const product of products) {
+      console.log('\n➡️ Attempting product:', product.title);
       try {
         const title = gqlEscape(product.title || "Untitled");
         const description = gqlEscape(product.description || "");
@@ -281,24 +288,36 @@ app.get('/sync-products', async (req, res) => {
           }
         `;
 
+        console.log('📤 Sending GraphQL mutation:\n', mutation);
+
         const response = await client.query({ data: mutation });
+
+        console.log('📥 GraphQL response:\n', JSON.stringify(response.body, null, 2));
 
         const result = response.body.data.productCreate;
 
         if (result.userErrors.length) {
-          console.error(`❌ Product create errors for "${product.title}":`, result.userErrors);
+          console.error(`❌ User errors for "${product.title}":`, result.userErrors);
           continue;
         }
 
-        console.log(`✅ Created product: ${result.product.title}`);
+        console.log(`✅ Created product:`, result.product.title);
         createdCount++;
 
       } catch (err) {
         console.error(`❌ Other Error while creating "${product.title}":`, err.message || err);
+        if (err.response?.data?.errors) {
+          console.error('🔴 GraphQL Errors:', JSON.stringify(err.response.data.errors, null, 2));
+        } else if (err.response?.data) {
+          console.error('🔴 API Response Error:', JSON.stringify(err.response.data, null, 2));
+        }
       }
     }
 
-    res.send(`✅ Synced ${createdCount} of ${products.length} products.`);
+    const message = `✅ Synced ${createdCount} of ${products.length} products.`;
+    console.log('🎉 Final status:', message);
+    res.send(message);
+
   } catch (err) {
     console.error('❌ Critical /sync-products error:', err.message || err);
     res.status(500).send('Internal Server Error');
