@@ -46,7 +46,11 @@ app.use((req, res, next) => {
     frameAncestors += ` https://${shop}`;
   }
 
-  res.setHeader("Content-Security-Policy", `frame-ancestors ${frameAncestors};`);
+  const cspValue = `frame-ancestors ${frameAncestors};`;
+  res.setHeader("Content-Security-Policy", cspValue);
+
+  console.log("✅ CSP Header Set:", cspValue); // 👈 Logs the final frame-ancestors
+
   next();
 });
 
