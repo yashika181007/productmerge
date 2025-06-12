@@ -231,13 +231,12 @@ app.get('/seed-products', async (req, res) => {
   res.send('Dummy products inserted.');
 });
 app.get('/sync-products', async (req, res) => {
+  console.log("🔄 Starting /sync-products...");
   try {
-    console.log('🔄 Starting /sync-products...');
-
     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
-    console.log('🛍️ Installed shop info:', installed);
-
     if (!installed) return res.status(400).send('No installed shop.');
+
+    console.log("🛍️ Installed shop info:", installed);
 
     const session = new Session({
       id: `${installed.shop}_session`,
@@ -245,37 +244,22 @@ app.get('/sync-products', async (req, res) => {
       accessToken: installed.access_token,
       isOnline: false,
     });
-    console.log('🔐 Session created:', session);
+    console.log("🔐 Session created:", session);
 
     const client = new shopify.clients.Graphql({ session });
-    console.log('📡 GraphQL client initialized');
+    console.log("📡 GraphQL client initialized");
 
     const [products] = await db.execute('SELECT * FROM products');
     console.log(`📦 Found ${products.length} products in DB.`);
 
     let createdCount = 0;
 
-    function gqlEscape(str) {
-      return String(str)
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/\n/g, '\\n');
-    }
-
     for (const product of products) {
-      console.log('\n➡️ Attempting product:', product.title);
+      console.log(`➡️ Attempting product: ${product.title}`);
       try {
-        const title = gqlEscape(product.title || "Untitled");
-        const description = gqlEscape(product.description || "");
-
         const mutation = `
-          mutation {
-            productCreate(product: {
-              title: "${title}",
-              descriptionHtml: "${description}",
-              vendor: "My Vendor",
-              productType: "General"
-            }) {
+          mutation productCreate($product: ProductCreateInput!) {
+            productCreate(product: $product) {
               product {
                 id
                 title
@@ -288,36 +272,42 @@ app.get('/sync-products', async (req, res) => {
           }
         `;
 
-        console.log('📤 Sending GraphQL mutation:\n', mutation);
+        const variables = {
+          product: {
+            title: product.title,
+            descriptionHtml: product.description || '',
+            vendor: "My Vendor",
+            productType: "General",
+          },
+        };
 
-        const response = await client.query({ data: mutation });
+        console.log('📤 Sending mutation with variables:', variables);
 
-        console.log('📥 GraphQL response:\n', JSON.stringify(response.body, null, 2));
+        const response = await client.query({
+          data: {
+            query: mutation,
+            variables,
+          },
+        });
 
         const result = response.body.data.productCreate;
 
         if (result.userErrors.length) {
-          console.error(`❌ User errors for "${product.title}":`, result.userErrors);
+          console.error(`❌ User Errors for "${product.title}":`, result.userErrors);
           continue;
         }
 
-        console.log(`✅ Created product:`, result.product.title);
+        const productId = result.product.id;
+        console.log(`✅ Created: ${result.product.title} (${productId})`);
         createdCount++;
 
       } catch (err) {
         console.error(`❌ Other Error while creating "${product.title}":`, err.message || err);
-        if (err.response?.data?.errors) {
-          console.error('🔴 GraphQL Errors:', JSON.stringify(err.response.data.errors, null, 2));
-        } else if (err.response?.data) {
-          console.error('🔴 API Response Error:', JSON.stringify(err.response.data, null, 2));
-        }
       }
     }
 
-    const message = `✅ Synced ${createdCount} of ${products.length} products.`;
-    console.log('🎉 Final status:', message);
-    res.send(message);
-
+    console.log(`🎉 Final status: ✅ Synced ${createdCount} of ${products.length} products.`);
+    res.send(`✅ Synced ${createdCount} of ${products.length} products.`);
   } catch (err) {
     console.error('❌ Critical /sync-products error:', err.message || err);
     res.status(500).send('Internal Server Error');
