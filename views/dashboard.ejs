@@ -122,9 +122,17 @@
         const { app, utils } = await waitForAppBridge();
         console.log('✅ AppBridge loaded:', app);
 
-        const token = await utils.getSessionToken(app);
-        console.log('🛡️ Session Token:', token);
-
+        // const token = await utils.getSessionToken(app);
+        // console.log('🛡️ Session Token:', token);
+        let token;
+        try {
+          token = await utils.getSessionToken(app);
+          console.log('🛡️ Session Token:', token);
+        } catch (tokenErr) {
+          console.error('❌ Failed to get session token:', tokenErr);
+          output.textContent = '❌ Failed to get session token.';
+          return;
+        }
         const res = await fetch(path, {
           method: 'GET',
           headers: {
