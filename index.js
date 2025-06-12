@@ -7,6 +7,8 @@ const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const qs = require('qs');
 const path = require('path');
+require('@shopify/shopify-api/adapters/node');
+const { shopifyApi } = require('@shopify/shopify-api');
 
 // Middlewares
 const verifySessionToken = require('./middleware/verifySessionToken');
@@ -18,7 +20,14 @@ const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-04';
 const URL = process.env.URL;
-
+const shopify = shopifyApi({
+  apiKey: process.env.SHOPIFY_API_KEY,
+  apiSecretKey: process.env.SHOPIFY_API_SECRET,
+  scopes: process.env.SHOPIFY_SCOPES.split(','),
+  hostName: process.env.URL.replace(/^https?:\/\//, ''),
+  isEmbeddedApp: true,
+  apiVersion: process.env.SHOPIFY_API_VERSION || '2024-04',
+});
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -237,7 +246,7 @@ app.get('/sync-products', async (req, res) => {
       accessToken: token,
       isOnline: false
     });
-console.log(session);
+    console.log(session);
     const client = new shopify.api.clients.Graphql({ session });
     const [products] = await db.execute('SELECT * FROM products');
 
