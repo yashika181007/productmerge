@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const qs = require('qs');
 const path = require('path');
 require('@shopify/shopify-api/adapters/node');
-const { shopifyApi, Session, clients } = require('@shopify/shopify-api');
+const { shopifyApi, Session  ,GraphqlClient } = require('@shopify/shopify-api');
 
 // Middlewares
 const verifySessionToken = require('./middleware/verifySessionToken');
@@ -244,8 +244,7 @@ app.get('/sync-products', async (req, res) => {
       isOnline: false
     });
 
-    const client = new clients.Graphql({ session });
-
+    const client = new GraphqlClient({ session });
     const [products] = await db.execute('SELECT * FROM products');
 
     for (const product of products) {
