@@ -242,18 +242,22 @@ app.get('/sync-products', async (req, res) => {
       accessToken: installed.access_token,
       isOnline: false,
     });
-    const client = new shopify.clients.Graphql({ session });
 
+    const client = new shopify.clients.Graphql({ session });
     const [products] = await db.execute('SELECT * FROM products');
 
     let createdCount = 0;
 
     for (const product of products) {
       try {
-        // --- Step 1: Create Product ---
-        const createProductMutation = `
-          mutation productCreate($input: ProductCreateInput!) {
-            productCreate(input: $input) {
+        const mutation = `
+          mutation {
+            productCreate(product: {
+              title: "${product.title.replace(/"/g, '\\"')}",
+              descriptionHtml: "${(product.description || '').replace(/"/g, '\\"')}",
+              vendor: "Dummy Vendor",
+              productType: "Dummy Type"
+            }) {
               product {
                 id
                 title
@@ -266,70 +270,19 @@ app.get('/sync-products', async (req, res) => {
           }
         `;
 
-        const variables = {
-          input: {
-            title: product.title,
-          },
-        };
-
-        const response = await client.query({
-          data: {
-            query: createProductMutation,
-            variables,
-          },
-        });
-
+        const response = await client.query({ data: mutation });
         const result = response.body.data.productCreate;
 
         if (result.userErrors.length) {
-          console.error('❌ Product create errors:', result.userErrors);
+          console.error(`❌ Product create errors for "${product.title}":`, result.userErrors);
           continue;
         }
 
-        const productId = result.product.id;
-        console.log(`✅ Created: ${result.product.title}`);
+        console.log(`✅ Created product: ${result.product.title}`);
         createdCount++;
 
-        // --- Step 2: Upload Media (if image exists) ---
-        if (product.image_url) {
-          const mediaMutation = `
-            mutation {
-              productCreateMedia(productId: "${productId}", media: [{
-                originalSource: "${product.image_url}",
-                mediaContentType: IMAGE
-              }]) {
-                media { alt status }
-                mediaUserErrors { message }
-              }
-            }
-          `;
-
-          await client.query({ data: mediaMutation });
-        }
-
-        // --- Step 3: Create Variant ---
-        const variantMutation = `
-          mutation {
-            productVariantsBulkCreate(productId: "${productId}", variants: [{
-              price: "${product.price}",
-              sku: "${product.sku}"
-            }]) {
-              product { id }
-              userErrors { field message }
-            }
-          }
-        `;
-
-        await client.query({ data: variantMutation });
-
       } catch (err) {
-        if (err.response?.data?.errors) {
-          console.error('❌ GraphQL Errors:', JSON.stringify(err.response.data.errors, null, 2));
-        } else if (err.response?.data) {
-          console.error('❌ API Response Error:', JSON.stringify(err.response.data, null, 2));
-        } else {
-          console.error('❌ Other Error:', err.message || err);
-        }
+        console.error(`❌ Other Error while creating "${product.title}":`, err.message || err);
       }
     }
 
@@ -339,7 +292,6 @@ app.get('/sync-products', async (req, res) => {
     res.status(500).send('Internal Server Error');
   }
 });
-
 
 app.get('/fetch-orders', verifySessionToken, async (req, res) => {
   console.log('--- /fetch-orders called ---');
