@@ -242,8 +242,7 @@ app.get('/sync-products', async (req, res) => {
       accessToken: installed.access_token,
       isOnline: false,
     });
-
-    const client = shopify.clients.graphql(session);
+     const client = new shopify.clients.Graphql({session});
     const [products] = await db.execute('SELECT * FROM products');
 
     for (const product of products) {
