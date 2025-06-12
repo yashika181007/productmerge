@@ -230,87 +230,203 @@ app.get('/seed-products', async (req, res) => {
   );
   res.send('Dummy products inserted.');
 });
+// app.get('/sync-products', async (req, res) => {
+//   console.log("🔄 Starting /sync-products...");
+//   try {
+//     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
+//     if (!installed) return res.status(400).send('No installed shop.');
+
+//     console.log("🛍️ Installed shop info:", installed);
+
+//     const session = new Session({
+//       id: `${installed.shop}_session`,
+//       shop: installed.shop,
+//       accessToken: installed.access_token,
+//       isOnline: false,
+//     });
+//     console.log("🔐 Session created:", session);
+
+//     const client = new shopify.clients.Graphql({ session });
+//     console.log("📡 GraphQL client initialized");
+
+//     const [products] = await db.execute('SELECT * FROM products');
+//     console.log(`📦 Found ${products.length} products in DB.`);
+
+//     let createdCount = 0;
+
+//     for (const product of products) {
+//       console.log(`➡️ Attempting product: ${product.title}`);
+//       try {
+//         const mutation = `
+//           mutation productCreate($product: ProductCreateInput!) {
+//             productCreate(product: $product) {
+//               product {
+//                 id
+//                 title
+//               }
+//               userErrors {
+//                 field
+//                 message
+//               }
+//             }
+//           }
+//         `;
+
+//         const variables = {
+//           product: {
+//             title: product.title,
+//             descriptionHtml: product.description || '',
+//             vendor: "My Vendor",
+//             productType: "General",
+//           },
+//         };
+
+//         console.log('📤 Sending mutation with variables:', variables);
+
+//         const response = await client.query({
+//           data: {
+//             query: mutation,
+//             variables,
+//           },
+//         });
+
+//         const result = response.body.data.productCreate;
+
+//         if (result.userErrors.length) {
+//           console.error(`❌ User Errors for "${product.title}":`, result.userErrors);
+//           continue;
+//         }
+
+//         const productId = result.product.id;
+//         console.log(`✅ Created: ${result.product.title} (${productId})`);
+//         createdCount++;
+
+//       } catch (err) {
+//         console.error(`❌ Other Error while creating "${product.title}":`, err.message || err);
+//       }
+//     }
+
+//     console.log(`🎉 Final status: ✅ Synced ${createdCount} of ${products.length} products.`);
+//     res.send(`✅ Synced ${createdCount} of ${products.length} products.`);
+//   } catch (err) {
+//     console.error('❌ Critical /sync-products error:', err.message || err);
+//     res.status(500).send('Internal Server Error');
+//   }
+// });
+
 app.get('/sync-products', async (req, res) => {
-  console.log("🔄 Starting /sync-products...");
   try {
     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
-    if (!installed) return res.status(400).send('No installed shop.');
+    if (!installed) return res.status(400).send('No installed shop found.');
 
-    console.log("🛍️ Installed shop info:", installed);
+    const shopDomain = installed.shop;
+    const accessToken = installed.access_token;
 
-    const session = new Session({
-      id: `${installed.shop}_session`,
-      shop: installed.shop,
-      accessToken: installed.access_token,
-      isOnline: false,
-    });
-    console.log("🔐 Session created:", session);
+    const [rows] = await db.execute('SELECT * FROM products');
+    if (rows.length === 0) return res.send('No products to sync.');
 
-    const client = new shopify.clients.Graphql({ session });
-    console.log("📡 GraphQL client initialized");
-
-    const [products] = await db.execute('SELECT * FROM products');
-    console.log(`📦 Found ${products.length} products in DB.`);
-
-    let createdCount = 0;
-
-    for (const product of products) {
-      console.log(`➡️ Attempting product: ${product.title}`);
-      try {
-        const mutation = `
-          mutation productCreate($product: ProductCreateInput!) {
-            productCreate(product: $product) {
-              product {
-                id
-                title
-              }
-              userErrors {
-                field
-                message
-              }
-            }
-          }
-        `;
-
-        const variables = {
-          product: {
-            title: product.title,
-            descriptionHtml: product.description || '',
-            vendor: "My Vendor",
-            productType: "General",
-          },
-        };
-
-        console.log('📤 Sending mutation with variables:', variables);
-
-        const response = await client.query({
-          data: {
-            query: mutation,
-            variables,
-          },
-        });
-
-        const result = response.body.data.productCreate;
-
-        if (result.userErrors.length) {
-          console.error(`❌ User Errors for "${product.title}":`, result.userErrors);
-          continue;
+    for (const product of rows) {
+      const createProductMutation = `
+    mutation {
+      productCreate(product: {
+        title: "${product.title.replace(/"/g, '\\"')}"
+      }) {
+        product {
+          id
+          title
         }
-
-        const productId = result.product.id;
-        console.log(`✅ Created: ${result.product.title} (${productId})`);
-        createdCount++;
-
-      } catch (err) {
-        console.error(`❌ Other Error while creating "${product.title}":`, err.message || err);
+        userErrors {
+          field
+          message
+        }
       }
+    }`;
+
+      const createProductResponse = await axios.post(
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        { query: createProductMutation },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const createdProduct = createProductResponse.data.data?.productCreate?.product;
+      const userErrors = createProductResponse.data.data?.productCreate?.userErrors;
+      if (!createdProduct || userErrors?.length) {
+        console.error('Product creation failed:', userErrors);
+        continue;
+      }
+
+      const productId = createdProduct.id;
+
+      const imageMutation = `
+    mutation {
+      productCreateMedia(productId: "${productId}", media: [
+        {
+          originalSource: "${product.image_url}",
+          mediaContentType: IMAGE
+        }
+      ]) {
+        media {
+          alt
+          status
+        }
+        mediaUserErrors {
+          field
+          message
+        }
+      }
+    }`;
+
+      await axios.post(
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        { query: imageMutation },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      // ✅ NEW BULK VARIANT MUTATION
+      const variantMutation = `
+    mutation {
+      productVariantsBulkCreate(productId: "${productId}", variants: [
+        {
+          price: "${product.price}",
+          sku: "${product.sku}"
+        }
+      ]) {
+        product {
+          id
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }`;
+
+      await axios.post(
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        { query: variantMutation },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
     }
 
-    console.log(`🎉 Final status: ✅ Synced ${createdCount} of ${products.length} products.`);
-    res.send(`✅ Synced ${createdCount} of ${products.length} products.`);
+    res.send(`Successfully synced ${rows.length} products to ${shopDomain}`);
   } catch (err) {
-    console.error('❌ Critical /sync-products error:', err.message || err);
-    res.status(500).send('Internal Server Error');
+    console.error('Sync error:', err.response?.data || err.message);
+    res.status(500).send('Failed to sync products.');
   }
 });
 
