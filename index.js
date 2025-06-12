@@ -242,7 +242,7 @@ app.get('/sync-products', async (req, res) => {
       accessToken: installed.access_token,
       isOnline: false,
     });
-     const client = new shopify.clients.Graphql({session});
+    const client = new shopify.clients.Graphql({ session });
     const [products] = await db.execute('SELECT * FROM products');
 
     for (const product of products) {
@@ -305,13 +305,19 @@ app.get('/sync-products', async (req, res) => {
           }
         `;
         await client.query({ data: variantsMutation });
-
+        res.send(`✅ Synced ${products.length} products.`);
       } catch (err) {
-        console.error('❌ Error syncing product:', err?.response?.data || err.message);
+        if (err.response?.data?.errors) {
+          console.error('❌ GraphQL Errors:', JSON.stringify(err.response.data.errors, null, 2));
+        } else if (err.response?.data) {
+          console.error('❌ API Response Error:', JSON.stringify(err.response.data, null, 2));
+        } else {
+          console.error('❌ Other Error:', err.message || err);
+        }
+
       }
     }
 
-    res.send(`✅ Synced ${products.length} products.`);
   } catch (err) {
     console.error('❌ Critical /sync-products error:', err.message || err);
     res.status(500).send('Internal Server Error');
