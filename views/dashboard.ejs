@@ -51,7 +51,9 @@
 
 <body>
   <h1>🚀 Shipping Owl Dashboard</h1>
-  <p>Local products in DB: <strong><%= productCount %></strong></p>
+  <p>Local products in DB: <strong>
+      <%= productCount %>
+    </strong></p>
 
   <script>
     console.log("🧮 EJS productCount rendered:", "<%= productCount %>");
@@ -68,6 +70,8 @@
       console.log('[AppBridge] DOM loaded');
 
       const AppBridge = window['app-bridge'];
+      const AppBridgeUtils = window['app-bridge-utils']; // ✅ FIXED
+
       const createApp = AppBridge.default;
 
       const hostParam = new URLSearchParams(location.search).get("host");
@@ -86,11 +90,12 @@
 
       window.appBridge = {
         app,
-        utils: AppBridge.utils
+        utils: AppBridgeUtils // ✅ FIXED
       };
 
       console.log('[AppBridge] Initialized successfully:', window.appBridge);
     });
+
   </script>
 
   <script>
