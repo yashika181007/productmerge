@@ -46,11 +46,7 @@ app.use((req, res, next) => {
     frameAncestors += ` https://${shop}`;
   }
 
-  const cspValue = `frame-ancestors ${frameAncestors};`;
-  res.setHeader("Content-Security-Policy", cspValue);
-
-  console.log("✅ CSP Header Set:", cspValue); // 👈 Logs the final frame-ancestors
-
+  res.setHeader("Content-Security-Policy", `frame-ancestors ${frameAncestors};`);
   next();
 });
 
@@ -193,8 +189,6 @@ app.get('/callback', async (req, res) => {
 
 app.get('/apps/shipping-owl', async (req, res) => {
   const { shop, host } = req.query;
-  const frameAncestors = `frame-ancestors https://admin.shopify.com https://${shop}`;
-  res.setHeader("Content-Security-Policy", frameAncestors);
 
   if (!shop || !host) {
     return res.send('Missing shop or host.');
@@ -240,10 +234,9 @@ app.get('/sync-products', async (req, res) => {
     const [products] = await db.execute('SELECT * FROM products');
 
     for (const product of products) {
-      // Step 1: Create product with variants
       const createProductMutation = `
-        mutation productCreateWithVariants($product: ProductInput!, $variants: [ProductVariantInput!]!) {
-          productCreateWithVariants(product: $product, variants: $variants) {
+        mutation productCreate($input: ProductCreateInput!) {
+          productCreate(product: $input) {
             product {
               id
               title
@@ -259,22 +252,19 @@ app.get('/sync-products', async (req, res) => {
       const productInput = {
         title: product.title,
         vendor: "Shipping Owl App",
-        productType: "Synced Product"
+        productType: "Synced Product",
+        variants: [{
+          price: product.price.toString(),
+          sku: product.sku
+        }],
+        images: product.image_url ? [{ src: product.image_url }] : []
       };
-
-      const variantsInput = [{
-        price: product.price.toString(),
-        sku: product.sku
-      }];
 
       const createRes = await axios.post(
         `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
         {
           query: createProductMutation,
-          variables: {
-            product: productInput,
-            variants: variantsInput
-          }
+          variables: { input: productInput }
         },
         {
           headers: {
@@ -284,72 +274,19 @@ app.get('/sync-products', async (req, res) => {
         }
       );
 
-      const productCreate = createRes.data.data?.productCreateWithVariants;
+      const productCreate = createRes.data.data?.productCreate;
 
       if (!productCreate || productCreate.userErrors.length > 0) {
         console.error('Product creation failed:', productCreate?.userErrors || createRes.data.errors);
         continue;
       }
 
-      const createdProductId = productCreate.product.id;
-      console.log(`Created product: ${productCreate.product.title}`);
-
-      // Step 2: (Optional) Upload image if present
-      if (product.image_url) {
-        const createMediaMutation = `
-          mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
-            productCreateMedia(productId: $productId, media: $media) {
-              media {
-                ... on MediaImage {
-                  id
-                  image {
-                    originalSrc
-                  }
-                }
-              }
-              mediaUserErrors {
-                field
-                message
-              }
-            }
-          }
-        `;
-
-        const mediaInput = [{
-          originalSource: product.image_url,
-          mediaContentType: "IMAGE",
-          alt: product.title
-        }];
-
-        const mediaRes = await axios.post(
-          `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
-          {
-            query: createMediaMutation,
-            variables: {
-              productId: createdProductId,
-              media: mediaInput
-            }
-          },
-          {
-            headers: {
-              'X-Shopify-Access-Token': token,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-
-        const mediaErrors = mediaRes.data.data?.productCreateMedia?.mediaUserErrors;
-        if (mediaErrors && mediaErrors.length > 0) {
-          console.warn(`Media upload failed for product ${product.title}:`, mediaErrors);
-        } else {
-          console.log(`Image uploaded for product: ${product.title}`);
-        }
-      }
+      console.log(`✅ Created product: ${productCreate.product.title}`);
     }
 
     res.send(`Synced ${products.length} products.`);
   } catch (error) {
-    console.error('Error syncing products:', error.message);
+    console.error('❌ Error syncing products:', error.message);
     res.status(500).send('Something went wrong while syncing products.');
   }
 });
