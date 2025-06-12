@@ -336,10 +336,10 @@ app.get('/sync-products', async (req, res) => {
     for (const product of rows) {
       console.log(`🔄 Syncing product: ${product.title}`);
 
-      // ✅ Create Product Mutation
+      // ✅ Create Product Mutation (2024-10+ API fix)
       const createProductMutation = `
-        mutation productCreate($product: ProductCreateInput!) {
-          productCreate(product: $product) {
+        mutation productCreate($input: ProductCreateInput!) {
+          productCreate(input: $input) {
             product {
               id
               title
@@ -353,7 +353,7 @@ app.get('/sync-products', async (req, res) => {
       `;
 
       const variables = {
-        product: {
+        input: {
           title: product.title
         }
       };
@@ -383,11 +383,6 @@ app.get('/sync-products', async (req, res) => {
       console.log('productCreate', productCreate);
       console.log('createdProduct', createdProduct);
       console.log('userErrors', userErrors);
-
-      if (!createdProduct || (userErrors && userErrors.length)) {
-        console.error('❌ Product creation failed:', JSON.stringify(userErrors, null, 2));
-        continue;
-      }
 
       if (!createdProduct || (userErrors && userErrors.length)) {
         console.error('❌ Product creation failed:', JSON.stringify(userErrors, null, 2));
