@@ -224,86 +224,92 @@ app.get('/seed-products', async (req, res) => {
 });
 
 app.get('/sync-products', async (req, res) => {
-  const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
-  if (!installed) return res.status(400).send('No installed shop.');
+  try {
+    const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
+    if (!installed) return res.status(400).send('No installed shop.');
 
-  const shop = installed.shop;
-  const token = installed.access_token;
-  const session = new shopify.api.session.Session({
-    id: `${shop}_session`,
-    shop,
-    accessToken: token,
-    isOnline: false
-  });
+    const shop = installed.shop;
+    const token = installed.access_token;
 
-  const client = new shopify.api.clients.Graphql({ session });
-  const [products] = await db.execute('SELECT * FROM products');
+    const session = new shopify.api.session.Session({
+      id: `${shop}_session`,
+      shop,
+      accessToken: token,
+      isOnline: false
+    });
+console.log(session);
+    const client = new shopify.api.clients.Graphql({ session });
+    const [products] = await db.execute('SELECT * FROM products');
 
-  for (const product of products) {
-    try {
-      const query = `
-        mutation {
-          productCreate(product: {
-            title: "${product.title.replace(/"/g, '\\"')}",
-            bodyHtml: "${(product.description || '').replace(/"/g, '\\"')}",
-            vendor: "${(product.vendor || 'My Brand').replace(/"/g, '\\"')}",
-            productType: "${(product.product_type || 'Default').replace(/"/g, '\\"')}"
-          }) {
-            product {
-              id
-              title
+    for (const product of products) {
+      try {
+        const query = `
+          mutation {
+            productCreate(product: {
+              title: "${product.title.replace(/"/g, '\\"')}",
+              bodyHtml: "${(product.description || '').replace(/"/g, '\\"')}",
+              vendor: "${(product.vendor || 'My Brand').replace(/"/g, '\\"')}",
+              productType: "${(product.product_type || 'Default').replace(/"/g, '\\"')}"
+            }) {
+              product {
+                id
+                title
+              }
+              userErrors {
+                field
+                message
+              }
             }
-            userErrors {
-              field
-              message
-            }
-          }
-        }`;
+          }`;
 
-      const response = await client.query({ data: query });
-      const createdProduct = response.body.data.productCreate;
+        const response = await client.query({ data: query });
+        const result = response.body.data.productCreate;
 
-      if (createdProduct.userErrors.length) {
-        console.error('Product creation failed:', createdProduct.userErrors);
-        continue;
+        if (result.userErrors.length) {
+          console.error('Product creation userErrors:', result.userErrors);
+          continue;
+        }
+
+        const productId = result.product.id;
+
+        // Media Upload
+        await client.query({
+          data: `
+            mutation {
+              productCreateMedia(productId: "${productId}", media: [{
+                originalSource: "${product.image_url}",
+                mediaContentType: IMAGE
+              }]) {
+                media { alt status }
+                mediaUserErrors { message }
+              }
+            }`
+        });
+
+        // Variant Creation
+        await client.query({
+          data: `
+            mutation {
+              productVariantsBulkCreate(productId: "${productId}", variants: [{
+                price: "${product.price}",
+                sku: "${product.sku}"
+              }]) {
+                product { id }
+                userErrors { field message }
+              }
+            }`
+        });
+
+      } catch (innerErr) {
+        console.error('Error syncing individual product:', innerErr?.response?.data || innerErr.message);
       }
-
-      const productId = createdProduct.product.id;
-
-      // ✅ Media upload
-      await client.query({
-        data: `
-          mutation {
-            productCreateMedia(productId: "${productId}", media: [{
-              originalSource: "${product.image_url}", 
-              mediaContentType: IMAGE
-            }]) {
-              media { alt status }
-              mediaUserErrors { message }
-            }
-          }`
-      });
-
-      // ✅ Variants create
-      await client.query({
-        data: `
-          mutation {
-            productVariantsBulkCreate(productId: "${productId}", variants: [{
-              price: "${product.price}",
-              sku: "${product.sku}"
-            }]) {
-              product { id }
-              userErrors { field message }
-            }
-          }`
-      });
-
-    } catch (err) {
-      console.error('Error syncing product:', err?.response?.errors || err.message);
     }
-  }
 
-  res.send(`Synced ${products.length} products.`);
+    res.send(`Synced ${products.length} products.`);
+  } catch (outerErr) {
+    console.error('Critical /sync-products error:', outerErr?.response?.data || outerErr.message);
+    res.status(500).send('Internal Server Error. Check server logs for details.');
+  }
 });
 
 app.get('/fetch-orders', verifySessionToken, async (req, res) => {
