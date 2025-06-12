@@ -8,8 +8,7 @@ const crypto = require('crypto');
 const qs = require('qs');
 const path = require('path');
 require('@shopify/shopify-api/adapters/node');
-const { shopifyApi, Session  ,GraphqlClient } = require('@shopify/shopify-api');
-
+const { shopifyApi, Session } = require('@shopify/shopify-api');
 // Middlewares
 const verifySessionToken = require('./middleware/verifySessionToken');
 const verifyShopifyWebhook = require('./middleware/verifyShopifyWebhook');
@@ -241,21 +240,19 @@ app.get('/sync-products', async (req, res) => {
       id: `${installed.shop}_session`,
       shop: installed.shop,
       accessToken: installed.access_token,
-      isOnline: false
+      isOnline: false,
     });
 
-    const client = new GraphqlClient({ session });
+    const client = shopify.clients.graphql(session);
     const [products] = await db.execute('SELECT * FROM products');
 
     for (const product of products) {
       try {
-        const mutation = `
+        // 1. Create Product
+        const createProductMutation = `
           mutation {
             productCreate(product: {
-              title: "${product.title.replace(/"/g, '\\"')}",
-              bodyHtml: "${(product.description || '').replace(/"/g, '\\"')}",
-              vendor: "${(product.vendor || 'My Brand').replace(/"/g, '\\"')}",
-              productType: "${(product.product_type || 'Default').replace(/"/g, '\\"')}"
+              title: "${product.title.replace(/"/g, '\\"')}"
             }) {
               product {
                 id
@@ -269,54 +266,55 @@ app.get('/sync-products', async (req, res) => {
           }
         `;
 
-        const response = await client.query({ data: mutation });
+        const response = await client.query({ data: createProductMutation });
         const result = response.body.data.productCreate;
 
         if (result.userErrors.length) {
-          console.error('User errors:', result.userErrors);
+          console.error('Product create errors:', result.userErrors);
           continue;
         }
 
         const productId = result.product.id;
+        console.log(`✅ Created: ${result.product.title}`);
 
-        // Upload Media
+        // 2. Upload Media (if exists)
         if (product.image_url) {
-          await client.query({
-            data: `
-              mutation {
-                productCreateMedia(productId: "${productId}", media: [{
-                  originalSource: "${product.image_url}",
-                  mediaContentType: IMAGE
-                }]) {
-                  media { alt status }
-                  mediaUserErrors { message }
-                }
-              }`
-          });
+          const mediaMutation = `
+            mutation {
+              productCreateMedia(productId: "${productId}", media: [{
+                originalSource: "${product.image_url}",
+                mediaContentType: IMAGE
+              }]) {
+                media { alt status }
+                mediaUserErrors { message }
+              }
+            }
+          `;
+          await client.query({ data: mediaMutation });
         }
 
-        // Create Variants
-        await client.query({
-          data: `
-            mutation {
-              productVariantsBulkCreate(productId: "${productId}", variants: [{
-                price: "${product.price}",
-                sku: "${product.sku}"
-              }]) {
-                product { id }
-                userErrors { field message }
-              }
-            }`
-        });
+        // 3. Create Variants
+        const variantsMutation = `
+          mutation {
+            productVariantsBulkCreate(productId: "${productId}", variants: [{
+              price: "${product.price}",
+              sku: "${product.sku}"
+            }]) {
+              product { id }
+              userErrors { field message }
+            }
+          }
+        `;
+        await client.query({ data: variantsMutation });
 
       } catch (err) {
-        console.error('Error syncing product:', err?.response?.data || err.message);
+        console.error('❌ Error syncing product:', err?.response?.data || err.message);
       }
     }
 
-    res.send(`Synced ${products.length} products.`);
+    res.send(`✅ Synced ${products.length} products.`);
   } catch (err) {
-    console.error('Critical /sync-products error:', err.message || err);
+    console.error('❌ Critical /sync-products error:', err.message || err);
     res.status(500).send('Internal Server Error');
   }
 });
