@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const qs = require('qs');
 const path = require('path');
 require('@shopify/shopify-api/adapters/node');
-const { shopifyApi } = require('@shopify/shopify-api');
+const { shopifyApi, Session, clients } = require('@shopify/shopify-api');
 
 // Middlewares
 const verifySessionToken = require('./middleware/verifySessionToken');
@@ -237,22 +237,20 @@ app.get('/sync-products', async (req, res) => {
     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
     if (!installed) return res.status(400).send('No installed shop.');
 
-    const shop = installed.shop;
-    const token = installed.access_token;
-
-    const session = new shopify.api.session.Session({
-      id: `${shop}_session`,
-      shop,
-      accessToken: token,
+    const session = new Session({
+      id: `${installed.shop}_session`,
+      shop: installed.shop,
+      accessToken: installed.access_token,
       isOnline: false
     });
-    console.log(session);
-    const client = new shopify.api.clients.Graphql({ session });
+
+    const client = new clients.Graphql({ session });
+
     const [products] = await db.execute('SELECT * FROM products');
 
     for (const product of products) {
       try {
-        const query = `
+        const mutation = `
           mutation {
             productCreate(product: {
               title: "${product.title.replace(/"/g, '\\"')}",
@@ -269,33 +267,36 @@ app.get('/sync-products', async (req, res) => {
                 message
               }
             }
-          }`;
+          }
+        `;
 
-        const response = await client.query({ data: query });
+        const response = await client.query({ data: mutation });
         const result = response.body.data.productCreate;
 
         if (result.userErrors.length) {
-          console.error('Product creation userErrors:', result.userErrors);
+          console.error('User errors:', result.userErrors);
           continue;
         }
 
         const productId = result.product.id;
 
-        // Media Upload
-        await client.query({
-          data: `
-            mutation {
-              productCreateMedia(productId: "${productId}", media: [{
-                originalSource: "${product.image_url}",
-                mediaContentType: IMAGE
-              }]) {
-                media { alt status }
-                mediaUserErrors { message }
-              }
-            }`
-        });
+        // Upload Media
+        if (product.image_url) {
+          await client.query({
+            data: `
+              mutation {
+                productCreateMedia(productId: "${productId}", media: [{
+                  originalSource: "${product.image_url}",
+                  mediaContentType: IMAGE
+                }]) {
+                  media { alt status }
+                  mediaUserErrors { message }
+                }
+              }`
+          });
+        }
 
-        // Variant Creation
+        // Create Variants
         await client.query({
           data: `
             mutation {
@@ -309,15 +310,15 @@ app.get('/sync-products', async (req, res) => {
             }`
         });
 
-      } catch (innerErr) {
-        console.error('Error syncing individual product:', innerErr?.response?.data || innerErr.message);
+      } catch (err) {
+        console.error('Error syncing product:', err?.response?.data || err.message);
       }
     }
 
     res.send(`Synced ${products.length} products.`);
-  } catch (outerErr) {
-    console.error('Critical /sync-products error:', outerErr?.response?.data || outerErr.message);
-    res.status(500).send('Internal Server Error. Check server logs for details.');
+  } catch (err) {
+    console.error('Critical /sync-products error:', err.message || err);
+    res.status(500).send('Internal Server Error');
   }
 });
 
