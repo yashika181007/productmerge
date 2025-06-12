@@ -251,13 +251,8 @@ app.get('/sync-products', async (req, res) => {
     for (const product of products) {
       try {
         const mutation = `
-          mutation {
-            productCreate(product: {
-              title: "${product.title.replace(/"/g, '\\"')}",
-              descriptionHtml: "${(product.description || '').replace(/"/g, '\\"')}",
-              vendor: "Dummy Vendor",
-              productType: "Dummy Type"
-            }) {
+          mutation productCreate($input: ProductCreateInput!) {
+            productCreate(input: $input) {
               product {
                 id
                 title
@@ -270,19 +265,39 @@ app.get('/sync-products', async (req, res) => {
           }
         `;
 
-        const response = await client.query({ data: mutation });
+        const variables = {
+          input: {
+            title: product.title,
+            descriptionHtml: product.description,
+            variants: [
+              {
+                price: product.price.toString(),
+                sku: product.sku,
+              },
+            ],
+            images: product.image_url ? [{ src: product.image_url }] : [],
+            category: 'Apparel', // Replace with appropriate category
+          },
+        };
+
+        const response = await client.query({
+          data: {
+            query: mutation,
+            variables,
+          },
+        });
+
         const result = response.body.data.productCreate;
 
-        if (result.userErrors.length) {
-          console.error(`❌ Product create errors for "${product.title}":`, result.userErrors);
+        if (result.userErrors.length > 0) {
+          console.error('❌ Product create errors:', result.userErrors);
           continue;
         }
 
-        console.log(`✅ Created product: ${result.product.title}`);
+        console.log(`✅ Created: ${result.product.title}`);
         createdCount++;
-
       } catch (err) {
-        console.error(`❌ Other Error while creating "${product.title}":`, err.message || err);
+        console.error('❌ Error creating product:', err.message || err);
       }
     }
 
