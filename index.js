@@ -236,14 +236,14 @@ app.get('/sync-products', async (req, res) => {
     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
     if (!installed) return res.status(400).send('No installed shop.');
 
-    const session = new shopify.api.session.Session({
+    const session = new Session({
       id: `${installed.shop}_session`,
       shop: installed.shop,
       accessToken: installed.access_token,
       isOnline: false,
     });
-
     const client = new shopify.clients.Graphql({ session });
+
     const [products] = await db.execute('SELECT * FROM products');
 
     let createdCount = 0;
@@ -339,6 +339,7 @@ app.get('/sync-products', async (req, res) => {
     res.status(500).send('Internal Server Error');
   }
 });
+
 
 app.get('/fetch-orders', verifySessionToken, async (req, res) => {
   console.log('--- /fetch-orders called ---');
