@@ -236,23 +236,24 @@ app.get('/sync-products', async (req, res) => {
     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
     if (!installed) return res.status(400).send('No installed shop.');
 
-    const session = new Session({
+    const session = new shopify.api.session.Session({
       id: `${installed.shop}_session`,
       shop: installed.shop,
       accessToken: installed.access_token,
       isOnline: false,
     });
+
     const client = new shopify.clients.Graphql({ session });
     const [products] = await db.execute('SELECT * FROM products');
 
+    let createdCount = 0;
+
     for (const product of products) {
       try {
-        // 1. Create Product
+        // --- Step 1: Create Product ---
         const createProductMutation = `
-          mutation {
-            productCreate(product: {
-              title: "${product.title.replace(/"/g, '\\"')}"
-            }) {
+          mutation productCreate($input: ProductCreateInput!) {
+            productCreate(input: $input) {
               product {
                 id
                 title
@@ -265,18 +266,31 @@ app.get('/sync-products', async (req, res) => {
           }
         `;
 
-        const response = await client.query({ data: createProductMutation });
+        const variables = {
+          input: {
+            title: product.title,
+          },
+        };
+
+        const response = await client.query({
+          data: {
+            query: createProductMutation,
+            variables,
+          },
+        });
+
         const result = response.body.data.productCreate;
 
         if (result.userErrors.length) {
-          console.error('Product create errors:', result.userErrors);
+          console.error('❌ Product create errors:', result.userErrors);
           continue;
         }
 
         const productId = result.product.id;
         console.log(`✅ Created: ${result.product.title}`);
+        createdCount++;
 
-        // 2. Upload Media (if exists)
+        // --- Step 2: Upload Media (if image exists) ---
         if (product.image_url) {
           const mediaMutation = `
             mutation {
@@ -289,11 +303,12 @@ app.get('/sync-products', async (req, res) => {
               }
             }
           `;
+
           await client.query({ data: mediaMutation });
         }
 
-        // 3. Create Variants
-        const variantsMutation = `
+        // --- Step 3: Create Variant ---
+        const variantMutation = `
           mutation {
             productVariantsBulkCreate(productId: "${productId}", variants: [{
               price: "${product.price}",
@@ -304,8 +319,9 @@ app.get('/sync-products', async (req, res) => {
             }
           }
         `;
-        await client.query({ data: variantsMutation });
-        res.send(`✅ Synced ${products.length} products.`);
+
+        await client.query({ data: variantMutation });
+
       } catch (err) {
         if (err.response?.data?.errors) {
           console.error('❌ GraphQL Errors:', JSON.stringify(err.response.data.errors, null, 2));
@@ -314,10 +330,10 @@ app.get('/sync-products', async (req, res) => {
         } else {
           console.error('❌ Other Error:', err.message || err);
         }
-
       }
     }
 
+    res.send(`✅ Synced ${createdCount} of ${products.length} products.`);
   } catch (err) {
     console.error('❌ Critical /sync-products error:', err.message || err);
     res.status(500).send('Internal Server Error');
