@@ -57,8 +57,8 @@ app.get('/', (req, res) => {
     `https://${shop}/admin/oauth/authorize` +
     `?client_id=${SHOPIFY_API_KEY}` +
     `&scope=${process.env.SHOPIFY_SCOPES}` +
-    `&redirect_uri=${encodeURIComponent(redirectUri)}`;
-
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&grant_options[]=per-user`;
   res.redirect(installUrl);
 });
 
@@ -152,22 +152,22 @@ app.get('/callback', async (req, res) => {
     );
     await axios.post(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
       query: `mutation {
-    webhookSubscriptionCreate(
-      topic: APP_UNINSTALLED,
-      webhookSubscription: {
-        callbackUrl: "${URL}/webhooks/app-uninstalled",
-        format: JSON
-      }
-    ) {
-      webhookSubscription {
-        id
-      }
-      userErrors {
-        field
-        message
-      }
-    }
-  }`
+                webhookSubscriptionCreate(
+                  topic: APP_UNINSTALLED,
+                  webhookSubscription: {
+                    callbackUrl: "${URL}/webhooks/app-uninstalled",
+                    format: JSON
+                  }
+                ) {
+                  webhookSubscription {
+                    id
+                  }
+                  userErrors {
+                    field
+                    message
+                  }
+                }
+              }`
     }, {
       headers: {
         'X-Shopify-Access-Token': accessToken,
@@ -210,9 +210,9 @@ app.get('/seed-products', async (req, res) => {
 
   const baseUrl = URL;
   const dummy = [
-    ['SKU-RED-011', 'Red1 T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],
-    ['SKU-BLU-021', 'Blue1 Jeans', 'Classic blue denim jeans', `${baseUrl}/images/blue-jeans.jpg`, 49.99],
-    ['SKU-GRN-031', 'Green1 Hoodie', 'Cozy green hoodie', `${baseUrl}/images/green-hoodie.jpg`, 39.99],
+    ['SKU-RED-011', 'Red T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],
+    ['SKU-BLU-021', 'Blue Jeans', 'Classic blue denim jeans', `${baseUrl}/images/blue-jeans.jpg`, 49.99],
+    ['SKU-GRN-031', 'Green Hoodie', 'Cozy green hoodie', `${baseUrl}/images/green-hoodie.jpg`, 39.99],
   ];
   await db.query(
     `INSERT IGNORE INTO products (sku, title, description, image_url, price) VALUES ?`,
@@ -263,9 +263,14 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
         title: product.title || '',
         descriptionHtml: product.description || '',
         vendor: 'Seeded Vendor',
-        productType: 'Synced from App'
+        productType: 'Synced from App',
+        variants: [{
+          price: product.price?.toString() || '0.00',
+          sku: product.sku || ''
+        }]
       }
     };
+
     const createResp = await axios.post(
       `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
       { query: createProductMutation, variables: createVariables },
@@ -287,16 +292,8 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
       defaultVariantId = variantEdges[0].node?.id || null;
     }
 
-    if (defaultVariantId) {
-      const variantInput = { id: defaultVariantId };
-      if (product.price != null && !isNaN(product.price)) {
-        variantInput.price = product.price.toString();
-      }
-      if (product.sku) {
-        variantInput.sku = product.sku;
-      }
-      if (Object.keys(variantInput).length > 1) {
-        const variantUpdateMutation = `
+    if (Object.keys(variantInput).length > 1) {
+      const variantUpdateMutation = `
           mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
             productVariantsBulkUpdate(productId: $productId, variants: $variants) {
               userErrors {
@@ -306,41 +303,13 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
             }
           }
         `;
-        const variantVariables = {
-          productId: createdProduct.id,
-          variants: [variantInput]
-        };
-        await axios.post(
-          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-          { query: variantUpdateMutation, variables: variantVariables },
-          {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-      }
-    }
-
-    if (product.image_url && product.image_url.startsWith('http')) {
-      const imageMutation = `
-        mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
-          productCreateMedia(productId: $productId, media: $media) {
-            mediaUserErrors {
-              field
-              message
-            }
-          }
-        }
-      `;
-      const imageVariables = {
+      const variantVariables = {
         productId: createdProduct.id,
-        media: [{ originalSource: product.image_url, mediaContentType: 'IMAGE' }]
+        variants: [variantInput]
       };
       await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-        { query: imageMutation, variables: imageVariables },
+        { query: variantUpdateMutation, variables: variantVariables },
         {
           headers: {
             'X-Shopify-Access-Token': accessToken,
@@ -350,6 +319,34 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
       );
     }
   }
+
+  if (product.image_url && product.image_url.startsWith('http')) {
+    const imageMutation = `
+        mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+          productCreateMedia(productId: $productId, media: $media) {
+            mediaUserErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+    const imageVariables = {
+      productId: createdProduct.id,
+      media: [{ originalSource: product.image_url, mediaContentType: 'IMAGE' }]
+    };
+    await axios.post(
+      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+      { query: imageMutation, variables: imageVariables },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+  }
+}
 
   return res.send(`Finished syncing ${rows.length} products.`);
 });

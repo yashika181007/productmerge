@@ -390,3 +390,26 @@ app.post('/webhook/app/uninstalled', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+structure
+shopify-upsell-app/
+│
+├── views/                  # EJS templates
+│   └── dashboard.ejs
+│
+├── public/                 # JS/CSS injected to storefront
+│   └── upsell.js
+│
+├── routes/
+│   ├── auth.js             # OAuth + token setup
+│   ├── dashboard.js        # Embedded app dashboard
+│   └── api.js              # Sync products, campaigns
+│
+├── controllers/
+│   └── upsellController.js
+│
+├── db/                     # SQL or ORM
+│   └── models.js
+│
+├── app.js                  # Main server entry
+├── shopify.js              # Shopify API setup
+└── .env
