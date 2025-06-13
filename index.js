@@ -277,6 +277,7 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
       }
     );
     const productCreatePayload = createResp.data.data?.productCreate;
+    console.log('productCreate:', JSON.stringify(productCreatePayload, null, 2));
     if (!productCreatePayload || !productCreatePayload.product) {
       continue;
     }
@@ -286,6 +287,7 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
     if (Array.isArray(variantEdges) && variantEdges.length > 0) {
       defaultVariantId = variantEdges[0].node?.id || null;
     }
+    console.log('Default Variant ID:', defaultVariantId);
 
     if (defaultVariantId) {
       const variantInput = { id: defaultVariantId };
@@ -306,10 +308,14 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
             }
           }
         `;
+        console.log('variantUpdate response:', JSON.stringify(updateResp.data, null, 2));
+
         const variantVariables = {
           productId: createdProduct.id,
           variants: [variantInput]
         };
+        console.log('Updating variant with:', variantVariables);
+
         await axios.post(
           `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
           { query: variantUpdateMutation, variables: variantVariables },
@@ -355,8 +361,6 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
 });
 
 app.get('/fetch-orders', verifySessionToken, async (req, res) => {
-  console.log('--- /fetch-orders called ---');
-
   try {
     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
     console.log('Installed shop record:', installed);
