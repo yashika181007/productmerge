@@ -1,14 +1,11 @@
 require('dotenv').config();
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const qs = require('qs');
 const path = require('path');
-require('@shopify/shopify-api/adapters/node');
-const { shopifyApi, Session } = require('@shopify/shopify-api');
 // Middlewares
 const verifySessionToken = require('./middleware/verifySessionToken');
 const verifyShopifyWebhook = require('./middleware/verifyShopifyWebhook');
@@ -17,16 +14,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-04';
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION;
 const URL = process.env.URL;
-const shopify = shopifyApi({
-  apiKey: process.env.SHOPIFY_API_KEY,
-  apiSecretKey: process.env.SHOPIFY_API_SECRET,
-  scopes: process.env.SHOPIFY_SCOPES.split(','),
-  hostName: process.env.URL.replace(/^https?:\/\//, ''),
-  isEmbeddedApp: true,
-  apiVersion: process.env.SHOPIFY_API_VERSION || '2024-04',
-});
+
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -231,7 +221,7 @@ app.get('/seed-products', async (req, res) => {
   res.send('Dummy products inserted.');
 });
 
-app.get('/sync-products', async (req, res) => {
+app.get('/sync-products',verifySessionToken, async (req, res) => {
   try {
     console.log('🚀 Starting product sync (simple products only)...');
 
