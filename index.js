@@ -233,61 +233,81 @@ app.get('/seed-products', async (req, res) => {
 
 app.get('/sync-products', async (req, res) => {
   try {
-    console.log('🚀 Starting product sync...');
+    console.log('🚀 Starting product sync (simple products only)...');
 
-    // ✅ Step 1: Get Installed Shop
-    const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
+    // Step 1: Fetch installed shop record
+    const [[installed]] = await db.execute(
+      'SELECT shop, access_token FROM installed_shops LIMIT 1'
+    );
     if (!installed || !installed.shop || !installed.access_token) {
-      console.error('❌ Installed shop info missing.');
+      console.error('❌ Installed shop info missing or incomplete.');
       return res.status(400).send('No installed shop found.');
     }
-
     const shopDomain = installed.shop;
     const accessToken = installed.access_token;
     console.log(`🔐 Connected to shop: ${shopDomain}`);
 
-    // ✅ Step 2: Get Products to Sync
+    // Step 2: Fetch products from local DB
     const [rows] = await db.execute('SELECT * FROM products');
     if (!Array.isArray(rows) || rows.length === 0) {
       console.warn('⚠️ No products found in database.');
       return res.send('No products to sync.');
     }
-
     console.log(`📦 Found ${rows.length} products to sync.`);
 
-    // ✅ Step 3: Loop Through Products
+    // Step 3: Loop through each product
     for (const product of rows) {
-      if (!product.title || !product.sku) {
-        console.warn(`⚠️ Skipping product due to missing title or SKU: ${JSON.stringify(product)}`);
+      // Basic validation: need title and optionally SKU/price if you want to set them
+      if (!product.title) {
+        console.warn(
+          `⚠️ Skipping product due to missing title: ${JSON.stringify(product)}`
+        );
         continue;
       }
-
       console.log(`🔄 Syncing product: ${product.title}`);
 
-      // ✅ Create Product
+      // === 3a. Create Product (default variant implicitly created) ===
+      // Use ProductCreateInput, request the default variant’s ID in response via variants(first:1)
       const createProductMutation = `
-        mutation productCreate($input: ProductCreateInput!) {
-          productCreate(input: $input) {
-            product { id title }
-            userErrors { field message }
+        mutation productCreate($product: ProductCreateInput!) {
+          productCreate(product: $product) {
+            product {
+              id
+              title
+              variants(first: 1) {
+                edges {
+                  node {
+                    id
+                  }
+                }
+              }
+            }
+            userErrors {
+              field
+              message
+            }
           }
         }
       `;
-
-      const variables = {
-        input: {
+      // Prepare create input: descriptionHtml is correct for 2025-04
+      const createVariables = {
+        product: {
           title: product.title,
-          bodyHtml: product.description || '',
+          descriptionHtml: product.description || '',
           vendor: 'Seeded Vendor',
           productType: 'Synced from App'
+          // You may include tags, options, etc., but no variants field here
         }
       };
 
-      let createProductResponse;
+      let createResp;
       try {
-        createProductResponse = await axios.post(
+        createResp = await axios.post(
           `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-          { query: createProductMutation, variables },
+          {
+            query: createProductMutation,
+            variables: createVariables
+          },
           {
             headers: {
               'X-Shopify-Access-Token': accessToken,
@@ -296,46 +316,186 @@ app.get('/sync-products', async (req, res) => {
           }
         );
       } catch (err) {
-        console.error(`🔥 Error creating product "${product.title}":`, err.response?.data || err.message);
+        console.error(
+          `🔥 Network/Axios error creating product "${product.title}":`,
+          err.response?.data || err.message
+        );
         continue;
       }
-
-      const productCreate = createProductResponse?.data?.data?.productCreate;
-      const createdProduct = productCreate?.product;
-      const userErrors = productCreate?.userErrors;
-
-      if (!createdProduct || (userErrors && userErrors.length > 0)) {
-        console.error(`❌ Failed to create product "${product.title}":`, userErrors);
+      const createData = createResp.data;
+      // Top-level GraphQL errors?
+      if (createData.errors) {
+        console.error(
+          `🔥 Top-level GraphQL errors when creating "${product.title}":`,
+          JSON.stringify(createData.errors, null, 2)
+        );
         continue;
       }
-
-      console.log(`✅ Product created: ${createdProduct.title} (ID: ${createdProduct.id})`);
+      const productCreatePayload = createData.data?.productCreate;
+      if (!productCreatePayload) {
+        console.error(
+          `❌ No productCreate payload for "${product.title}". Full response:`,
+          JSON.stringify(createData, null, 2)
+        );
+        continue;
+      }
+      const createdProduct = productCreatePayload.product;
+      const createErrors = productCreatePayload.userErrors;
+      if (!createdProduct || (Array.isArray(createErrors) && createErrors.length > 0)) {
+        console.error(
+          `❌ Failed to create product "${product.title}". userErrors:`,
+          createErrors
+        );
+        continue;
+      }
+      console.log(
+        `✅ Product created: ${createdProduct.title} (ID: ${createdProduct.id})`
+      );
       const productId = createdProduct.id;
 
-      // ✅ Attach Image
+      // Extract default variant ID
+      const variantEdges = createdProduct.variants?.edges;
+      let defaultVariantId = null;
+      if (
+        Array.isArray(variantEdges) &&
+        variantEdges.length > 0 &&
+        variantEdges[0].node?.id
+      ) {
+        defaultVariantId = variantEdges[0].node.id;
+        console.log(`🔖 Default variant ID: ${defaultVariantId}`);
+      } else {
+        console.warn(
+          `⚠️ Could not retrieve default variant ID for "${product.title}".`
+        );
+      }
+
+      // === 3b. Update default variant’s price & SKU (if provided) ===
+      if (defaultVariantId) {
+        // Only update if we have price or SKU in our local product record
+        const shouldUpdateVariant =
+          product.price != null || product.sku != null;
+        if (shouldUpdateVariant) {
+          // Use productVariantsBulkUpdate with a single-item array to update default variant
+          const variantUpdateMutation = `
+            mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+                userErrors {
+                  field
+                  message
+                }
+              }
+            }
+          `;
+          // Prepare variant input: include id plus any fields to update
+          const variantInput = {
+            id: defaultVariantId,
+            // Only include price/sku if valid
+            ...(product.price != null && !isNaN(product.price)
+              ? { price: product.price.toString() }
+              : {}),
+            ...(product.sku ? { sku: product.sku } : {})
+            // You could include other fields if needed (inventoryPolicy, weight, etc.)
+          };
+          // If variantInput ends up with only id (i.e., no price/sku), skip update
+          if (Object.keys(variantInput).length > 1) {
+            const variantVariables = {
+              productId,
+              variants: [variantInput]
+            };
+            let variantResp;
+            try {
+              variantResp = await axios.post(
+                `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+                {
+                  query: variantUpdateMutation,
+                  variables: variantVariables
+                },
+                {
+                  headers: {
+                    'X-Shopify-Access-Token': accessToken,
+                    'Content-Type': 'application/json'
+                  }
+                }
+              );
+            } catch (err) {
+              console.error(
+                `🔥 Network/Axios error updating default variant for "${product.title}":`,
+                err.response?.data || err.message
+              );
+              // Continue even if updating variant fails
+              console.warn(`⚠️ Continuing despite variant update failure.`);
+            }
+            if (variantResp) {
+              const varData = variantResp.data;
+              if (varData.errors) {
+                console.error(
+                  `🔥 Top-level GraphQL errors updating variant for "${product.title}":`,
+                  JSON.stringify(varData.errors, null, 2)
+                );
+              }
+              const variantPayload = varData.data?.productVariantsBulkUpdate;
+              if (variantPayload) {
+                const varErrors = variantPayload.userErrors;
+                if (Array.isArray(varErrors) && varErrors.length > 0) {
+                  console.warn(
+                    `⚠️ Variant userErrors for ${product.title}:`,
+                    varErrors
+                  );
+                } else {
+                  console.log(`✅ Default variant updated for ${product.title}`);
+                }
+              } else {
+                console.warn(
+                  `⚠️ No payload from productVariantsBulkUpdate for "${product.title}". Full response:`,
+                  JSON.stringify(varData, null, 2)
+                );
+              }
+            }
+          } else {
+            console.log(
+              `ℹ️ No price/SKU to update for default variant of "${product.title}", skipping variant update.`
+            );
+          }
+        } else {
+          console.log(
+            `ℹ️ No variant fields (price/SKU) provided for "${product.title}", skipping variant update.`
+          );
+        }
+      }
+
+      // === 3c. Attach Image ===
       if (product.image_url && product.image_url.startsWith('http')) {
         const imageMutation = `
           mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
             productCreateMedia(productId: $productId, media: $media) {
-              media { alt status }
-              mediaUserErrors { field message }
+              media {
+                alt
+                status
+              }
+              mediaUserErrors {
+                field
+                message
+              }
             }
           }
         `;
-
         const imageVariables = {
           productId,
-          media: [{
-            originalSource: product.image_url,
-            mediaContentType: 'IMAGE'
-          }]
+          media: [
+            {
+              originalSource: product.image_url,
+              mediaContentType: 'IMAGE'
+            }
+          ]
         };
-
-        let imageResponse;
+        let imageResp;
         try {
-          imageResponse = await axios.post(
+          imageResp = await axios.post(
             `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-            { query: imageMutation, variables: imageVariables },
+            {
+              query: imageMutation,
+              variables: imageVariables
+            },
             {
               headers: {
                 'X-Shopify-Access-Token': accessToken,
@@ -344,162 +504,58 @@ app.get('/sync-products', async (req, res) => {
             }
           );
         } catch (err) {
-          console.error(`🔥 Image upload failed for "${product.title}":`, err.response?.data || err.message);
-          continue;
+          console.error(
+            `🔥 Network/Axios error attaching image for "${product.title}":`,
+            err.response?.data || err.message
+          );
+          console.warn(`⚠️ Continuing without image.`);
         }
-
-        const mediaErrors = imageResponse.data?.data?.productCreateMedia?.mediaUserErrors;
-        if (mediaErrors?.length) {
-          console.warn(`⚠️ Image errors for ${product.title}:`, mediaErrors);
-        } else {
-          console.log(`🖼️ Image attached to ${product.title}`);
-        }
-      } else {
-        console.warn(`⚠️ No valid image URL for ${product.title}, skipping image upload.`);
-      }
-
-      // ✅ Add Variant
-      if (!product.price || isNaN(product.price)) {
-        console.warn(`⚠️ Skipping variant for ${product.title}: Invalid price`);
-        continue;
-      }
-
-      const variantMutation = `
-        mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantInput!]!) {
-          productVariantsBulkCreate(productId: $productId, variants: $variants) {
-            product { id }
-            userErrors { field message }
+        if (imageResp) {
+          const imgData = imageResp.data;
+          if (imgData.errors) {
+            console.error(
+              `🔥 Top-level GraphQL errors in image mutation for "${product.title}":`,
+              JSON.stringify(imgData.errors, null, 2)
+            );
           }
-        }
-      `;
-
-      const variantVariables = {
-        productId,
-        variants: [{
-          price: product.price.toString(),
-          sku: product.sku
-        }]
-      };
-
-      let variantResponse;
-      try {
-        variantResponse = await axios.post(
-          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-          { query: variantMutation, variables: variantVariables },
-          {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-              'Content-Type': 'application/json'
+          const mediaPayload = imgData.data?.productCreateMedia;
+          if (mediaPayload) {
+            const mediaErrors = mediaPayload.mediaUserErrors;
+            if (Array.isArray(mediaErrors) && mediaErrors.length > 0) {
+              console.warn(
+                `⚠️ Image userErrors for ${product.title}:`,
+                mediaErrors
+              );
+            } else {
+              console.log(`🖼️ Image attached to ${product.title}`);
             }
+          } else {
+            console.warn(
+              `⚠️ No productCreateMedia payload for "${product.title}". Full response:`,
+              JSON.stringify(imgData, null, 2)
+            );
           }
-        );
-      } catch (err) {
-        console.error(`🔥 Variant creation failed for "${product.title}":`, err.response?.data || err.message);
-        continue;
-      }
-
-      const variantErrors = variantResponse.data?.data?.productVariantsBulkCreate?.userErrors;
-      if (variantErrors?.length) {
-        console.warn(`⚠️ Variant errors for ${product.title}:`, variantErrors);
+        }
       } else {
-        console.log(`✅ Variant added for ${product.title}`);
+        console.log(
+          `ℹ️ No valid image URL for ${product.title}, skipping image upload.`
+        );
       }
 
-      console.log(`🎉 Finished syncing product: ${product.title}`);
-    }
+      console.log(`🎉 Finished syncing simple product: ${product.title}`);
+    } // end for each product
 
-    const successMessage = `✅ Finished syncing ${rows.length} products to ${shopDomain}`;
+    const successMessage = `✅ Finished syncing ${rows.length} simple products to ${shopDomain}`;
     console.log(successMessage);
     res.send(successMessage);
   } catch (err) {
-    console.error('🔥 Top-level sync error:', err.response?.data || err.message);
+    console.error(
+      '🔥 Top-level sync error:',
+      err.response?.data || err.message || err
+    );
     res.status(500).send('Failed to sync products.');
   }
 });
-
-// app.get('/sync-products', async (req, res) => {
-//   console.log("🔄 Starting /sync-products...");
-//   try {
-//     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
-//     if (!installed) return res.status(400).send('No installed shop.');
-
-//     console.log("🛍️ Installed shop info:", installed);
-
-//     const session = new Session({
-//       id: `${installed.shop}_session`,
-//       shop: installed.shop,
-//       accessToken: installed.access_token,
-//       isOnline: false,
-//     });
-//     console.log("🔐 Session created:", session);
-
-//     const client = new shopify.clients.Graphql({ session });
-//     console.log("📡 GraphQL client initialized");
-
-//     const [products] = await db.execute('SELECT * FROM products');
-//     console.log(`📦 Found ${products.length} products in DB.`);
-
-//     let createdCount = 0;
-
-//     for (const product of products) {
-//       console.log(`➡️ Attempting product: ${product.title}`);
-//       try {
-//         const mutation = `
-//           mutation productCreate($product: ProductCreateInput!) {
-//             productCreate(product: $product) {
-//               product {
-//                 id
-//                 title
-//               }
-//               userErrors {
-//                 field
-//                 message
-//               }
-//             }
-//           }
-//         `;
-
-//         const variables = {
-//           product: {
-//             title: product.title,
-//             descriptionHtml: product.description || '',
-//             vendor: "My Vendor",
-//             productType: "General",
-//           },
-//         };
-
-//         console.log('📤 Sending mutation with variables:', variables);
-
-//         const response = await client.query({
-//           data: {
-//             query: mutation,
-//             variables,
-//           },
-//         });
-
-//         const result = response.body.data.productCreate;
-
-//         if (result.userErrors.length) {
-//           console.error(`❌ User Errors for "${product.title}":`, result.userErrors);
-//           continue;
-//         }
-
-//         const productId = result.product.id;
-//         console.log(`✅ Created: ${result.product.title} (${productId})`);
-//         createdCount++;
-
-//       } catch (err) {
-//         console.error(`❌ Other Error while creating "${product.title}":`, err.message || err);
-//       }
-//     }
-
-//     console.log(`🎉 Final status: ✅ Synced ${createdCount} of ${products.length} products.`);
-//     res.send(`✅ Synced ${createdCount} of ${products.length} products.`);
-//   } catch (err) {
-//     console.error('❌ Critical /sync-products error:', err.message || err);
-//     res.status(500).send('Internal Server Error');
-//   }
-// });
 
 app.get('/fetch-orders', verifySessionToken, async (req, res) => {
   console.log('--- /fetch-orders called ---');
