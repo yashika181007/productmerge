@@ -176,7 +176,7 @@ app.get('/callback', async (req, res) => {
     });
     const cleanedShop = shopData.myshopify_domain;
     const baseUrl = URL;
-    const redirectUrl = `${baseUrl}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
+    const redirectUrl = `${baseUrl}/?host=${host}&shop=${cleanedShop}`;
 
     return res.redirect(redirectUrl);
   } catch (err) {
