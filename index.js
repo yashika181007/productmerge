@@ -227,7 +227,7 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
     'SELECT access_token FROM installed_shops WHERE shop = ? LIMIT 1',
     [shopDomain]
   );
-  if (!installed || !installed.access_token) {
+  if (!installed?.access_token) {
     return res.status(400).send('No installed shop found.');
   }
   const accessToken = installed.access_token;
@@ -260,14 +260,10 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
     `;
     const createVariables = {
       product: {
-        title: product.title || '',
-        descriptionHtml: product.description || '',
+        title: product.title,
+        descriptionHtml: product.description,
         vendor: 'Seeded Vendor',
-        productType: 'Synced from App',
-        variants: [{
-          price: product.price?.toString() || '0.00',
-          sku: product.sku || ''
-        }]
+        productType: 'Synced from App'
       }
     };
 
@@ -281,18 +277,51 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
         }
       }
     );
-    const productCreatePayload = createResp.data.data?.productCreate;
-    if (!productCreatePayload || !productCreatePayload.product) {
-      continue;
-    }
-    const createdProduct = productCreatePayload.product;
-    const variantEdges = createdProduct.variants?.edges;
-    let defaultVariantId = null;
-    if (Array.isArray(variantEdges) && variantEdges.length > 0) {
-      defaultVariantId = variantEdges[0].node?.id || null;
+
+    const createdProduct = createResp?.data?.data?.productCreate?.product;
+    if (!createdProduct) continue;
+
+    const variantEdges = createdProduct.variants?.edges || [];
+    const defaultVariantId = variantEdges[0]?.node?.id;
+
+    // 🔄 Update variant with price and sku
+    if (defaultVariantId) {
+      const variantInput = {
+        id: defaultVariantId,
+        price: product.price?.toString(),
+        sku: product.sku
+      };
+
+      const variantUpdateMutation = `
+        mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+
+      const variantVariables = {
+        productId: createdProduct.id,
+        variants: [variantInput]
+      };
+
+      await axios.post(
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        { query: variantUpdateMutation, variables: variantVariables },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
     }
 
-    if (product.image_url && product.image_url.startsWith('http')) {
+    // 🖼 Upload image if exists
+    if (product.image_url?.startsWith('http')) {
       const imageMutation = `
         mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
           productCreateMedia(productId: $productId, media: $media) {
@@ -305,8 +334,14 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
       `;
       const imageVariables = {
         productId: createdProduct.id,
-        media: [{ originalSource: product.image_url, mediaContentType: 'IMAGE' }]
+        media: [
+          {
+            originalSource: product.image_url,
+            mediaContentType: 'IMAGE'
+          }
+        ]
       };
+
       await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
         { query: imageMutation, variables: imageVariables },
@@ -320,7 +355,7 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
     }
   }
 
-  return res.send(`Finished syncing ${rows.length} products.`);
+  res.send(`Finished syncing ${rows.length} products.`);
 });
 
 app.get('/fetch-orders', verifySessionToken, async (req, res) => {
