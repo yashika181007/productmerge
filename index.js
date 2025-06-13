@@ -292,36 +292,8 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
       defaultVariantId = variantEdges[0].node?.id || null;
     }
 
-    if (Object.keys(variantInput).length > 1) {
-      const variantUpdateMutation = `
-          mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-              userErrors {
-                field
-                message
-              }
-            }
-          }
-        `;
-      const variantVariables = {
-        productId: createdProduct.id,
-        variants: [variantInput]
-      };
-      await axios.post(
-        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-        { query: variantUpdateMutation, variables: variantVariables },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-    }
-  }
-
-  if (product.image_url && product.image_url.startsWith('http')) {
-    const imageMutation = `
+    if (product.image_url && product.image_url.startsWith('http')) {
+      const imageMutation = `
         mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
           productCreateMedia(productId: $productId, media: $media) {
             mediaUserErrors {
@@ -331,22 +303,22 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
           }
         }
       `;
-    const imageVariables = {
-      productId: createdProduct.id,
-      media: [{ originalSource: product.image_url, mediaContentType: 'IMAGE' }]
-    };
-    await axios.post(
-      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-      { query: imageMutation, variables: imageVariables },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
+      const imageVariables = {
+        productId: createdProduct.id,
+        media: [{ originalSource: product.image_url, mediaContentType: 'IMAGE' }]
+      };
+      await axios.post(
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        { query: imageMutation, variables: imageVariables },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
         }
-      }
-    );
+      );
+    }
   }
-}
 
   return res.send(`Finished syncing ${rows.length} products.`);
 });
