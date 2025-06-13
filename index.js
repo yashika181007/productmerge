@@ -240,66 +240,92 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
     return res.send('No products to sync.');
   }
 
+  let successCount = 0;
+  let failureCount = 0;
+
   for (const product of rows) {
-    const productInput = {
-      title: product.title || '',
-      descriptionHtml: product.description || '',
-      vendor: 'Seeded Vendor',
-      productType: 'Synced from App',
-      variants: [
+    try {
+      const productInput = {
+        title: product.title || '',
+        descriptionHtml: product.description || '',
+        vendor: 'Seeded Vendor',
+        productType: 'Synced from App',
+        variants: [
+          {
+            price: product.price?.toString() || '0.00',
+            sku: product.sku || ''
+          }
+        ]
+      };
+
+      if (product.image_url && product.image_url.startsWith('http')) {
+        productInput.images = [{ src: product.image_url }];
+      }
+
+      const createProductMutation = `
+        mutation productCreate($product: ProductCreateInput!) {
+          productCreate(product: $product) {
+            product {
+              id
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+
+      const variables = { product: productInput };
+
+      console.log('🧾 Creating Product with:', JSON.stringify(variables, null, 2));
+
+      const createResp = await axios.post(
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
         {
-          price: product.price?.toString() || '0.00',
-          sku: product.sku || ''
-        }
-      ]
-    };
-
-    if (product.image_url && product.image_url.startsWith('http')) {
-      productInput.images = [{ src: product.image_url }];
-    }
-
-    const createProductMutation = `
-      mutation productCreate($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-          }
-          userErrors {
-            field
-            message
+          query: createProductMutation,
+          variables
+        },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
           }
         }
+      );
+
+      const createData = createResp.data;
+      console.log('📦 Shopify Raw Response:', JSON.stringify(createData, null, 2));
+
+      const result = createData?.data?.productCreate;
+
+      if (!result) {
+        console.error('❌ productCreate field missing in response.');
+        failureCount++;
+        continue;
       }
-    `;
 
-    const variables = { product: productInput };
-
-    console.log('🧾 Creating Product with:', JSON.stringify(variables, null, 2));
-
-    const createResp = await axios.post(
-      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-      {
-        query: createProductMutation,
-        variables
-      },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
+      if (result.userErrors?.length > 0) {
+        console.error('❌ Shopify Validation Errors:', result.userErrors);
+        failureCount++;
+        continue;
       }
-    );
 
-    const result = createResp.data?.data?.productCreate;
+      if (result.product?.id) {
+        console.log(`✅ Created product successfully: ${result.product.id}`);
+        successCount++;
+      } else {
+        console.error('❌ Product created but ID missing.');
+        failureCount++;
+      }
 
-    if (result?.userErrors?.length) {
-      console.log('❌ Shopify Errors:', result.userErrors);
-    } else {
-      console.log(`✅ Created product successfully: ${result.product.id}`);
+    } catch (err) {
+      console.error(`🔥 Error syncing product "${product.title}":`, err.message);
+      failureCount++;
     }
   }
 
-  return res.send(`Finished syncing ${rows.length} products.`);
+  return res.send(`✅ Synced ${successCount} products, ❌ Failed ${failureCount}`);
 });
 
 app.get('/fetch-orders', verifySessionToken, async (req, res) => {
