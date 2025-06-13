@@ -245,7 +245,7 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
 
   for (const product of rows) {
     try {
-      const productInput = {
+      const input = {
         title: product.title || '',
         descriptionHtml: product.description || '',
         vendor: 'Seeded Vendor',
@@ -259,12 +259,12 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
       };
 
       if (product.image_url && product.image_url.startsWith('http')) {
-        productInput.images = [{ src: product.image_url }];
+        input.images = [{ src: product.image_url }];
       }
 
-      const createProductMutation = `
-        mutation productCreate($product: ProductCreateInput!) {
-          productCreate(product: $product) {
+      const mutation = `
+        mutation productCreate($input: ProductInput!) {
+          productCreate(input: $input) {
             product {
               id
             }
@@ -276,14 +276,14 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
         }
       `;
 
-      const variables = { product: productInput };
+      const variables = { input };
 
       console.log('🧾 Creating Product with:', JSON.stringify(variables, null, 2));
 
       const createResp = await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
         {
-          query: createProductMutation,
+          query: mutation,
           variables
         },
         {
