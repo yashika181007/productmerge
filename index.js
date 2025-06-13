@@ -286,38 +286,63 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
 
     // 🔄 Update variant with price and sku
     if (defaultVariantId) {
+      console.log(`🛠 Updating variant ${defaultVariantId} with price and SKU...`);
+
+      if (!product.price || isNaN(product.price)) {
+        console.warn(`⚠️ Skipping price update: Invalid price for product ${product.title}`);
+      }
+
       const variantInput = {
         id: defaultVariantId,
-        price: product.price?.toString(),
-        sku: product.sku
+        ...(product.price && !isNaN(product.price) ? { price: product.price.toString() } : {}),
+        ...(product.sku ? { sku: product.sku } : {})
       };
 
-      const variantUpdateMutation = `
-        mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-            userErrors {
-              field
-              message
+      console.log('🧾 Variant Input:', variantInput);
+
+      if (Object.keys(variantInput).length <= 1) {
+        console.warn('⚠️ No valid price or SKU to update. Skipping variant update.');
+      } else {
+        const variantUpdateMutation = `
+      mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+        productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+          product {
+            id
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+        const variantVariables = {
+          productId: createdProduct.id,
+          variants: [variantInput]
+        };
+
+        const variantUpdateResp = await axios.post(
+          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+          {
+            query: variantUpdateMutation,
+            variables: variantVariables
+          },
+          {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
             }
           }
-        }
-      `;
+        );
 
-      const variantVariables = {
-        productId: createdProduct.id,
-        variants: [variantInput]
-      };
-
-      await axios.post(
-        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-        { query: variantUpdateMutation, variables: variantVariables },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          }
+        const errors = variantUpdateResp.data?.data?.productVariantsBulkUpdate?.userErrors;
+        if (errors && errors.length > 0) {
+          console.error(`❌ Failed to update variant ${defaultVariantId}:`, errors);
+        } else {
+          console.log(`✅ Variant ${defaultVariantId} updated successfully with price ₹${product.price}, SKU: ${product.sku}`);
         }
-      );
+      }
     }
 
     // 🖼 Upload image if exists
