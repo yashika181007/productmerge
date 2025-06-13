@@ -308,8 +308,6 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
             }
           }
         `;
-        console.log('variantUpdate response:', JSON.stringify(updateResp.data, null, 2));
-
         const variantVariables = {
           productId: createdProduct.id,
           variants: [variantInput]
