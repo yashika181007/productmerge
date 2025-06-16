@@ -191,32 +191,14 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-app.get('/apps/shipping-owl', async (req, res) => {
-  const { shop, host } = req.query;
-
-  if (!shop || !host) {
-    return res.send('Missing shop or host.');
-  }
-
-  const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
-  res.render('dashboard', {
-    productCount: count,
-    shop,
-    host,
-    SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY
-  });
-});
-
 app.get('/dashboard', async (req, res) => {
-  const { shop, host } = req.query;
+  const { shop } = req.query;
   console.log(shop);
-   console.log(host);
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
      console.log(count);
   res.render('dashboard', {
     productCount: count,
     shop,
-    host,
     SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY
   });
 });
