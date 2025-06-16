@@ -208,8 +208,12 @@ app.get('/apps/shipping-owl', async (req, res) => {
 });
 
 app.get('/dashboard', async (req, res) => {
+  const { shop, host } = req.query;
+  console.log(shop);
+   console.log(host);
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
-    res.render('dashboard', {
+     console.log(count);
+  res.render('dashboard', {
     productCount: count,
     shop,
     host,
