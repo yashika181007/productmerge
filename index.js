@@ -209,7 +209,12 @@ app.get('/apps/shipping-owl', async (req, res) => {
 
 app.get('/dashboard', async (req, res) => {
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
-  res.render('dashboard', { productCount: count });
+    res.render('dashboard', {
+    productCount: count,
+    shop,
+    host,
+    SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY
+  });
 });
 
 app.get('/seed-products', async (req, res) => {
