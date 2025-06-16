@@ -8,9 +8,17 @@ const qs = require('qs');
 const path = require('path');
 const db = require('./db');
 const session = require('express-session');
+const MySQLStore = require('express-mysql-session')(session);
 // Middlewares
 const verifySessionToken = require('./middleware/verifySessionToken');
 const verifyShopifyWebhook = require('./middleware/verifyShopifyWebhook');
+const mysqlOptions = {
+   host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME
+};
+const sessionStore = new MySQLStore(mysqlOptions);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,15 +31,16 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  secret: process.env.SESSION_SECRET,
+  store: sessionStore,     
   resave: false,
-  saveUninitialized: true,
+  saveUninitialized: false,
   cookie: {
-    secure: false, // change to true if using HTTPS
+    secure: process.env.NODE_ENV === 'production', 
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 1 day
   }
 }));
+
 const rawBodySaver = (req, res, buf) => {
   if (buf && buf.length) {
     req.rawBody = buf.toString('utf8');
