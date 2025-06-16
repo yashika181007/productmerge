@@ -528,8 +528,6 @@ app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => 
   }
   res.status(200).send('Received');
 });
-// Campaign list page (GET)
-const axios = require('axios');
 
 const fetchProductTitle = async (shop, accessToken, productId) => {
   try {
@@ -557,8 +555,6 @@ app.get('/apps/upsell/campaigns', async (req, res) => {
 
   res.render('campaigns', { shop, campaigns: rows });
 });
-
-
 
 // Campaign creation (POST)
 app.post('/apps/upsell/campaigns', async (req, res) => {
@@ -623,13 +619,11 @@ app.post('/apps/upsell/campaigns/edit', async (req, res) => {
   res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
 });
 
-
 // POST: Delete
 app.post('/apps/upsell/campaigns/delete', async (req, res) => {
   const { id, shop } = req.body;
   await db.execute("DELETE FROM upsell_campaigns WHERE id = ?", [id]);
   res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
 });
-
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
