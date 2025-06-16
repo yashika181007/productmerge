@@ -74,8 +74,8 @@
       console.log('[AppBridge] DOM loaded');
 
       const AppBridge = window['app-bridge'];
-      const AppBridgeUtils = window['app-bridge-utils']; // ✅ FIXED
-
+      const AppBridgeUtils = window['app-bridge-utils'];
+      const actions = AppBridge.actions;
       const createApp = AppBridge.default;
 
       const hostParam = new URLSearchParams(location.search).get("host");
@@ -92,15 +92,31 @@
         forceRedirect: true,
       });
 
+      const { getSessionToken } = AppBridgeUtils; // ✅ Add this line
+
+      getSessionToken(app).then((token) => {
+        fetch("/campaigns", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+          .then(res => res.json())
+          .then(data => {
+            console.log("Campaigns data:", data);
+          })
+          .catch(err => console.error("Error loading campaigns:", err));
+      });
+
       window.appBridge = {
         app,
-        utils: AppBridgeUtils // ✅ FIXED
+        utils: AppBridgeUtils
       };
 
       console.log('[AppBridge] Initialized successfully:', window.appBridge);
     });
-
   </script>
+
 
   <script>
     const output = document.getElementById('output');

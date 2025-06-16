@@ -413,3 +413,141 @@ shopify-upsell-app/
 ├── app.js                  # Main server entry
 ├── shopify.js              # Shopify API setup
 └── .env
+Thanks for sharing your full Shopify app flow. You're building a 1-click upsell embedded app with a dashboard and campaigns UI. Here’s a breakdown of your setup and a checklist of what’s implemented, what’s good, and what’s missing (especially related to GDPR & Shopify App Store compliance):
+
+✅ FUNCTIONALITY CHECK
+🔄 OAuth Flow:
+✓ OAuth implemented correctly (/callback)
+
+✓ HMAC validation handled
+
+✓ Access token fetched and stored
+
+✓ Store data (email, shop name, etc.) stored
+
+✓ Webhook registered for APP_UNINSTALLED
+
+✓ Script tag added for upsell
+
+📦 Dashboard (/apps/shipping-owl)
+✓ Embedded using App Bridge
+
+✓ Product count shown
+
+✓ Buttons to seed/sync/fetch with Session Token Auth
+
+📈 Campaigns UI
+✓ App Bridge integration with TitleBar
+
+✓ List existing campaigns
+
+✓ Form to create new campaigns
+
+🔒 PRIVACY, SECURITY & COMPLIANCE CHECKLIST
+Feature	Status	Notes
+Data minimization	✅	Only necessary fields (shop, email, access token) collected.
+Session Token Auth	✅	verifySessionToken middleware + frontend token flow working.
+Webhook Signature Verification	🟡	You have verifyShopifyWebhook, but make sure it's applied to /webhooks/app-uninstalled.
+Data Deletion	❌	Not yet handled in /webhooks/app-uninstalled route.
+Encryption at Rest	🟡	You store access tokens and user info in DB. Ensure encryption (see below).
+Privacy Policy & Terms	✅	Links included in dashboard footer. Make sure routes /privacy-policy and /terms-of-use render actual content.
+Consent Logging	❌	Not implemented yet (recommended for GDPR).
+RBAC (Access Control)	❌	Currently not scoped per user/plan. Optional, but good for multi-user plans.
+Data Retention Policy	❌	No TTL/cleanup logic shown for orphaned shops. Consider adding cron-based cleanup.
+
+✅ RECOMMENDATIONS & PATCHES
+1. 🔐 Encrypt Access Tokens
+Update your DB logic to encrypt tokens:
+
+js
+Copy
+Edit
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY; // Must be 32 chars
+function encrypt(text) {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+  let encrypted = cipher.update(text);
+  encrypted = Buffer.concat([encrypted, cipher.final()]);
+  return iv.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+function decrypt(text) {
+  const parts = text.split(':');
+  const iv = Buffer.from(parts[0], 'hex');
+  const encryptedText = Buffer.from(parts[1], 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+  let decrypted = decipher.update(encryptedText);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted.toString();
+}
+Wrap your accessToken before inserting into DB:
+
+js
+Copy
+Edit
+await db.execute(..., [encrypt(accessToken), ...])
+2. 🔄 APP_UNINSTALLED Webhook Handling
+Make sure this route exists:
+
+js
+Copy
+Edit
+app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => {
+  const shop = req.headers['x-shopify-shop-domain'];
+  if (shop) {
+    await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
+    await db.execute('DELETE FROM campaigns WHERE shop = ?', [shop]);
+  }
+  res.status(200).send('App uninstalled and data cleaned.');
+});
+3. 📜 Serve Privacy Policy and Terms
+If these routes don't exist yet:
+
+js
+Copy
+Edit
+app.get('/privacy-policy', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public/privacy-policy.html'));
+});
+app.get('/terms-of-use', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public/terms-of-use.html'));
+});
+Create those static files in /public/.
+
+4. 📝 Add Consent Logging (Optional but Good)
+When installing, log consent:
+
+js
+Copy
+Edit
+await db.execute(
+  'INSERT INTO consent_logs (shop, email, consent_given_at) VALUES (?, ?, NOW())',
+  [shopData.myshopify_domain, shopData.email]
+);
+5. 🧼 Data Retention / Cleanup (Optional)
+You can create a cron job to:
+
+Delete shops not active in N days
+
+Remove empty/inactive campaigns
+
+✅ Final Thoughts
+You're 95% compliant with Shopify App Store requirements and GDPR, but you should:
+
+Encrypt access tokens
+
+Handle APP_UNINSTALLED securely
+
+Render real policy pages
+
+(Optional) Log consent and plan cleanup
+
+If you'd like, I can:
+
+Generate the missing verifyShopifyWebhook middleware
+
+Provide SQL for consent_logs table
+
+Give you a .env.example file for all environment variables
+
+Let me know what you want next!

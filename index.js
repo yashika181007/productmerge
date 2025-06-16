@@ -39,6 +39,7 @@ app.use((req, res, next) => {
   }
 
   res.setHeader("Content-Security-Policy", `frame-ancestors ${frameAncestors};`);
+    res.setHeader("Access-Control-Allow-Origin", "*");
   next();
 });
 
