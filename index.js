@@ -529,13 +529,36 @@ app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => 
   res.status(200).send('Received');
 });
 // Campaign list page (GET)
+const axios = require('axios');
+
+const fetchProductTitle = async (shop, accessToken, productId) => {
+  try {
+    const response = await axios.get(`https://${shop}/admin/api/2025-04/products/${productId}.json`, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken
+      }
+    });
+    return response.data.product?.title || 'Unknown';
+  } catch (e) {
+    console.error(`[fetchProductTitle] Error for ${productId}:`, e.response?.data || e.message);
+    return 'Unknown';
+  }
+};
+
 app.get('/apps/upsell/campaigns', async (req, res) => {
   const { shop } = req.query;
-  if (!shop) return res.status(400).send('Missing shop parameter');
-
   const [rows] = await db.execute("SELECT * FROM upsell_campaigns WHERE shop = ?", [shop]);
+  const [[{ access_token }]] = await db.execute("SELECT access_token FROM installed_shops WHERE shop = ?", [shop]);
+
+  for (let row of rows) {
+    row.trigger_product_title = await fetchProductTitle(shop, access_token, row.trigger_product_id);
+    row.upsell_product_title = await fetchProductTitle(shop, access_token, row.upsell_product_id);
+  }
+
   res.render('campaigns', { shop, campaigns: rows });
 });
+
+
 
 // Campaign creation (POST)
 app.post('/apps/upsell/campaigns', async (req, res) => {
@@ -584,5 +607,29 @@ app.get('/accept-upsell', async (req, res) => {
     return res.status(500).send('Failed to add upsell');
   }
 });
+// GET: Edit form
+app.get('/apps/upsell/campaigns/edit', async (req, res) => {
+  const { id, shop } = req.query;
+  const [[campaign]] = await db.execute("SELECT * FROM upsell_campaigns WHERE id = ?", [id]);
+  res.render('edit_campaign', { campaign, shop });
+});
+
+app.post('/apps/upsell/campaigns/edit', async (req, res) => {
+  const { id, shop, trigger_product_id, upsell_product_id, headline, description, discount } = req.body;
+  await db.execute(
+    `UPDATE upsell_campaigns SET trigger_product_id = ?, upsell_product_id = ?, headline = ?, description = ?, discount = ? WHERE id = ?`,
+    [trigger_product_id, upsell_product_id, headline, description, discount, id]
+  );
+  res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
+});
+
+
+// POST: Delete
+app.post('/apps/upsell/campaigns/delete', async (req, res) => {
+  const { id, shop } = req.body;
+  await db.execute("DELETE FROM upsell_campaigns WHERE id = ?", [id]);
+  res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
+});
+
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

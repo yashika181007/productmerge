@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
+  <meta charset="UTF-8">
   <title>Upsell Campaigns</title>
-  <meta charset="utf-8">
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "San Francisco", Roboto, "Segoe UI", sans-serif;
@@ -15,10 +16,12 @@
       margin-bottom: 30px;
     }
 
-    th, td {
+    th,
+    td {
       padding: 10px;
       border: 1px solid #ddd;
       text-align: left;
+      vertical-align: top;
     }
 
     form {
@@ -27,7 +30,8 @@
       max-width: 500px;
     }
 
-    input, textarea {
+    input,
+    textarea {
       padding: 8px;
       width: 100%;
     }
@@ -39,11 +43,16 @@
       padding: 10px;
       cursor: pointer;
     }
+
+    button:hover {
+      background: #3f4eae;
+    }
   </style>
 </head>
+
 <body>
 
-  <h1>Upsell Campaigns for <%= shop %></h1>
+  <h1>Upsell Campaigns</h1>
 
   <table>
     <thead>
@@ -53,21 +62,31 @@
         <th>Headline</th>
         <th>Description</th>
         <th>Discount</th>
-        <th>Status</th>
+        <th>Status / Actions</th>
       </tr>
     </thead>
     <tbody>
       <% if (campaigns.length === 0) { %>
-        <tr><td colspan="6">No campaigns found</td></tr>
+        <tr>
+          <td colspan="6">No campaigns found.</td>
+        </tr>
       <% } else { %>
         <% campaigns.forEach(c => { %>
           <tr>
-            <td><%= c.trigger_product_id %></td>
-            <td><%= c.upsell_product_id %></td>
+            <td><%= c.trigger_product_title %> (<%= c.trigger_product_id %>)</td>
+            <td><%= c.upsell_product_title %> (<%= c.upsell_product_id %>)</td>
             <td><%= c.headline %></td>
             <td><%= c.description %></td>
             <td><%= c.discount %></td>
-            <td><%= c.status %></td>
+            <td>
+              <%= c.status %><br />
+              <a href="/apps/upsell/campaigns/edit?id=<%= c.id %>&shop=<%= shop %>">Edit</a> |
+              <form method="POST" action="/apps/upsell/campaigns/delete" style="display:inline;">
+                <input type="hidden" name="id" value="<%= c.id %>">
+                <input type="hidden" name="shop" value="<%= shop %>">
+                <button type="submit" onclick="return confirm('Are you sure you want to delete this campaign?')">Delete</button>
+              </form>
+            </td>
           </tr>
         <% }) %>
       <% } %>
@@ -75,6 +94,7 @@
   </table>
 
   <h2>Create New Campaign</h2>
+
   <form method="POST" action="/apps/upsell/campaigns">
     <input type="hidden" name="shop" value="<%= shop %>" />
 
@@ -97,4 +117,5 @@
   </form>
 
 </body>
+
 </html>
