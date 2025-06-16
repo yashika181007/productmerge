@@ -240,7 +240,7 @@ app.get('/seed-products', async (req, res) => {
 
 app.get('/sync-products', async (req, res) => {
   const shopDomain = req.session.shop;
-
+console.log(shopDomain);
   const [[installed]] = await db.execute(
     'SELECT access_token FROM installed_shops WHERE shop = ? LIMIT 1',
     [shopDomain]
