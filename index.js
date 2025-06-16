@@ -240,8 +240,9 @@ app.get('/seed-products', async (req, res) => {
 });
 
 app.get('/sync-products', async (req, res) => {
-  const shopDomain = "shippingowl.myshopify.com";
-console.log(shopDomain);
+  const shopDomain = "shippingowl.myshopify.com"; // hardcoded for now
+  console.log(shopDomain);
+
   const [[installed]] = await db.execute(
     'SELECT access_token FROM installed_shops WHERE shop = ? LIMIT 1',
     [shopDomain]
@@ -257,7 +258,6 @@ console.log(shopDomain);
   }
 
   for (const product of rows) {
-    // ✅ Correct mutation using ProductInput!
     const createProductMutation = `
       mutation productCreate($input: ProductInput!) {
         productCreate(input: $input) {
@@ -279,19 +279,12 @@ console.log(shopDomain);
       }
     `;
 
-    // ✅ Input structure using "input" and ProductInput
     const createVariables = {
       input: {
         title: product.title || '',
         descriptionHtml: product.description || '',
         vendor: 'Seeded Vendor',
-        productType: 'Synced from App',
-        variants: [
-          {
-            price: product.price?.toString() || '0.00',
-            sku: product.sku || ''
-          }
-        ]
+        productType: 'Synced from App'
       }
     };
 
