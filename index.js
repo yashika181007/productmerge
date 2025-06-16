@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const qs = require('qs');
 const path = require('path');
 const db = require('./db');
+const session = require('express-session');
 // Middlewares
 const verifySessionToken = require('./middleware/verifySessionToken');
 const verifyShopifyWebhook = require('./middleware/verifyShopifyWebhook');
@@ -21,7 +22,16 @@ const URL = process.env.URL;
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
-
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  resave: false,
+  saveUninitialized: true,
+  cookie: {
+    secure: false, // change to true if using HTTPS
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 1 day
+  }
+}));
 const rawBodySaver = (req, res, buf) => {
   if (buf && buf.length) {
     req.rawBody = buf.toString('utf8');
@@ -146,6 +156,7 @@ app.get('/callback', async (req, res) => {
         userId
       ]
     );
+    req.session.shop = shop;
     await axios.post(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
       query: `mutation {
                 webhookSubscriptionCreate(
@@ -219,7 +230,7 @@ app.get('/seed-products', async (req, res) => {
 });
 
 app.get('/sync-products', async (req, res) => {
-  const shopDomain = req.shop;
+  const shopDomain = req.session.shop;
   const [[installed]] = await db.execute(
     'SELECT access_token FROM installed_shops WHERE shop = ? LIMIT 1',
     [shopDomain]
@@ -257,7 +268,7 @@ app.get('/sync-products', async (req, res) => {
     `;
     const createVariables = {
       product: {
-        title: product.title ,
+        title: product.title,
         descriptionHtml: product.description,
         vendor: 'Seeded Vendor',
         productType: 'Synced from App',
@@ -270,40 +281,39 @@ app.get('/sync-products', async (req, res) => {
       }
     };
 
-  };
-  const createResp = await axios.post(
-    `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-    { query: createProductMutation, variables: createVariables },
-    {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
+    const createResp = await axios.post(
+      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+      { query: createProductMutation, variables: createVariables },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
       }
+    );
+    const productCreatePayload = createResp.data.data?.productCreate;
+    console.log('productCreate:', JSON.stringify(productCreatePayload, null, 2));
+    if (!productCreatePayload || !productCreatePayload.product) {
+      continue;
     }
-  );
-  const productCreatePayload = createResp.data.data?.productCreate;
-  console.log('productCreate:', JSON.stringify(productCreatePayload, null, 2));
-  if (!productCreatePayload || !productCreatePayload.product) {
-    continue;
-  }
-  const createdProduct = productCreatePayload.product;
-  const variantEdges = createdProduct.variants?.edges;
-  let defaultVariantId = null;
-  if (Array.isArray(variantEdges) && variantEdges.length > 0) {
-    defaultVariantId = variantEdges[0].node?.id || null;
-  }
-  console.log('Default Variant ID:', defaultVariantId);
+    const createdProduct = productCreatePayload.product;
+    const variantEdges = createdProduct.variants?.edges;
+    let defaultVariantId = null;
+    if (Array.isArray(variantEdges) && variantEdges.length > 0) {
+      defaultVariantId = variantEdges[0].node?.id || null;
+    }
+    console.log('Default Variant ID:', defaultVariantId);
 
-  if (defaultVariantId) {
-    const variantInput = { id: defaultVariantId };
-    if (product.price != null && !isNaN(product.price)) {
-      variantInput.price = product.price.toString();
-    }
-    if (product.sku) {
-      variantInput.sku = product.sku;
-    }
-    if (Object.keys(variantInput).length > 1) {
-      const variantUpdateMutation = `
+    if (defaultVariantId) {
+      const variantInput = { id: defaultVariantId };
+      if (product.price != null && !isNaN(product.price)) {
+        variantInput.price = product.price.toString();
+      }
+      if (product.sku) {
+        variantInput.sku = product.sku;
+      }
+      if (Object.keys(variantInput).length > 1) {
+        const variantUpdateMutation = `
           mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
             productVariantsBulkUpdate(productId: $productId, variants: $variants) {
               userErrors {
@@ -313,27 +323,27 @@ app.get('/sync-products', async (req, res) => {
             }
           }
         `;
-      const variantVariables = {
-        productId: createdProduct.id,
-        variants: [variantInput]
-      };
-      console.log('Updating variant with:', variantVariables);
+        const variantVariables = {
+          productId: createdProduct.id,
+          variants: [variantInput]
+        };
+        console.log('Updating variant with:', variantVariables);
 
-      await axios.post(
-        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-        { query: variantUpdateMutation, variables: variantVariables },
-        {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
+        await axios.post(
+          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+          { query: variantUpdateMutation, variables: variantVariables },
+          {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
+            }
           }
-        }
-      );
+        );
+      }
     }
-  }
 
-  if (product.image_url && product.image_url.startsWith('http')) {
-    const imageMutation = `
+    if (product.image_url && product.image_url.startsWith('http')) {
+      const imageMutation = `
         mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
           productCreateMedia(productId: $productId, media: $media) {
             mediaUserErrors {
@@ -343,22 +353,22 @@ app.get('/sync-products', async (req, res) => {
           }
         }
       `;
-    const imageVariables = {
-      productId: createdProduct.id,
-      media: [{ originalSource: product.image_url, mediaContentType: 'IMAGE' }]
-    };
-    await axios.post(
-      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-      { query: imageMutation, variables: imageVariables },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
+      const imageVariables = {
+        productId: createdProduct.id,
+        media: [{ originalSource: product.image_url, mediaContentType: 'IMAGE' }]
+      };
+      await axios.post(
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        { query: imageMutation, variables: imageVariables },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json'
+          }
         }
-      }
-    );
+      );
+    }
   }
-}
 
   return res.send(`Finished syncing ${rows.length} products.`);
 });
