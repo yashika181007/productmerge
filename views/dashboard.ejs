@@ -4,13 +4,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="shopify-api-key" content="<%= SHOPIFY_API_KEY %>" />
   <title>Shipping Owl Dashboard</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       background: #f6f6f7;
       padding: 2rem;
+    }
+
+    h1 {
+      margin-bottom: 1rem;
     }
 
     button {
@@ -44,80 +47,20 @@
       font-family: monospace;
     }
   </style>
-
-  <!-- Shopify App Bridge -->
-  <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
-  <script src="https://unpkg.com/@shopify/app-bridge-utils@3"></script>
-
 </head>
 
 <body>
   <h1>🚀 Shipping Owl Dashboard</h1>
-  <p>Local products in DB: <strong>
-      <%= productCount %>
-    </strong></p>
-
-  <script>
-    console.log("🧮 EJS productCount rendered:", "<%= productCount %>");
-  </script>
+  <p>Local products in DB: <strong><%= productCount %></strong></p>
 
   <button id="seed">Seed Dummy Products</button>
   <button id="sync">Sync Products to Shopify</button>
   <button id="fetch">Fetch Orders from Shopify</button>
-  <a href="/apps/upsell/campaigns?shop=<%= shop %>&host=<%= host %>" style="text-decoration:none;">
+  <a href="/apps/upsell/campaigns?shop=<%= shop %>" style="text-decoration: none;">
     <button>Manage Upsell Campaigns</button>
   </a>
 
   <div id="output"></div>
-
-  <script>
-    document.addEventListener('DOMContentLoaded', async function () {
-      console.log('[AppBridge] DOM loaded');
-
-      const AppBridge = window['app-bridge'];
-      const AppBridgeUtils = window['app-bridge-utils'];
-      const actions = AppBridge.actions;
-      const createApp = AppBridge.default;
-
-      const hostParam = new URLSearchParams(location.search).get("host");
-      console.log('[AppBridge] Host param:', hostParam);
-
-      if (!hostParam) {
-        console.error('[AppBridge] Missing host param in URL');
-        return;
-      }
-
-      const app = createApp({
-        apiKey: "<%= SHOPIFY_API_KEY %>",
-        host: hostParam,
-        forceRedirect: true,
-      });
-
-      const { getSessionToken } = AppBridgeUtils; // ✅ Add this line
-
-      getSessionToken(app).then((token) => {
-        fetch("/campaigns", {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        })
-          .then(res => res.json())
-          .then(data => {
-            console.log("Campaigns data:", data);
-          })
-          .catch(err => console.error("Error loading campaigns:", err));
-      });
-
-      window.appBridge = {
-        app,
-        utils: AppBridgeUtils
-      };
-
-      console.log('[AppBridge] Initialized successfully:', window.appBridge);
-    });
-  </script>
-
 
   <script>
     const output = document.getElementById('output');
@@ -127,101 +70,25 @@
       fetch: document.getElementById('fetch')
     };
 
-    console.log("🔘 Buttons initialized:", buttons);
-    console.log("📤 Output element:", output);
-
-    async function waitForAppBridge() {
-      console.log('⏳ Waiting for AppBridge to be ready...');
-      return new Promise((resolve) => {
-        const check = () => {
-          if (window.appBridge && window.appBridge.utils && window.appBridge.app) {
-            console.log('✅ AppBridge is ready');
-            resolve(window.appBridge);
-          } else {
-            setTimeout(check, 100);
-          }
-        };
-        check();
-      });
-    }
-
-    buttons.seed.addEventListener('click', () => {
-      console.log('🧪 Seed button clicked');
-      callApi('/seed-products');
-    });
-
-    buttons.sync.addEventListener('click', () => {
-      console.log('🔄 Sync button clicked');
-      callApi('/sync-products');
-    });
-
-    buttons.fetch.addEventListener('click', () => {
-      console.log('📥 Fetch button clicked');
-      callApi('/fetch-orders');
-    });
-
     async function callApi(path) {
       try {
-        console.log('🚀 Starting API Call to:', path);
-
-        const { app, utils } = await waitForAppBridge();
-        console.log('🔧 Resolved AppBridge:', { app, utils });
-
-        let token;
-        try {
-          console.log('🔐 Getting session token...');
-          token = await utils.getSessionToken(app);
-          console.log('🛡️ Session Token:', token);
-        } catch (tokenErr) {
-          console.error('❌ Failed to get session token:', tokenErr);
-          output.textContent = '❌ Failed to get session token.';
-          return;
-        }
-
-        console.log('📤 Sending fetch to:', path);
-        console.log('📤 Headers:', { Authorization: `Bearer ${token}` });
-
-        const res = await fetch(path, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-
-        console.log('📡 Status:', res.status, res.statusText);
-        console.log('📄 Response Headers:', [...res.headers.entries()]);
-
+        const res = await fetch(path);
         const text = await res.text();
-        console.log('📦 Response Text:', text);
-
-        if (!res.ok) {
-          console.error('❌ HTTP Error:', res.status, res.statusText, '\n\n', text);
-          throw new Error(`HTTP ${res.status} - ${res.statusText}\n\n${text}`);
-        }
-
         output.textContent = text;
-        console.log('✅ Output set successfully.');
       } catch (err) {
-        console.error('🔥 Error in callApi:', err);
-        console.error('🔥 Error stack:', err.stack || err);
         output.textContent = '❌ Error: ' + err.message;
       }
     }
 
-    // Global JS error logger
-    window.addEventListener('error', function (e) {
-      console.error('⚠️ Global JS Error:', e.message, '\n', e.error);
-    });
-
-    window.addEventListener('unhandledrejection', function (e) {
-      console.error('⚠️ Unhandled Promise Rejection:', e.reason);
-    });
+    buttons.seed.addEventListener('click', () => callApi('/seed-products'));
+    buttons.sync.addEventListener('click', () => callApi('/sync-products'));
+    buttons.fetch.addEventListener('click', () => callApi('/fetch-orders'));
   </script>
+
   <footer style="text-align: center; margin-top: 20px;">
     <a href="/privacy-policy" target="_blank">Privacy Policy</a> |
     <a href="/terms-of-use" target="_blank">Terms of Use</a>
   </footer>
-
 </body>
 
 </html>

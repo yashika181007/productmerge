@@ -38,7 +38,8 @@ app.use((req, res, next) => {
     frameAncestors += ` https://${shop}`;
   }
 
-  res.setHeader("Content-Security-Policy", `frame-ancestors ${frameAncestors};`);
+  res.setHeader("Content-Security-Policy", "frame-ancestors 'none';");
+
   res.setHeader("Access-Control-Allow-Origin", "*");
   next();
 });
@@ -171,19 +172,19 @@ app.get('/callback', async (req, res) => {
     });
     const cleanedShop = shopData.myshopify_domain;
     const baseUrl = URL;
-    await axios.post(
-      `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/script_tags.json`,
-      {
-        script_tag: {
-          event: "onload",
-          src: `${process.env.URL}/upsell.js?shop=${cleanedShop}`
-        }
-      },
-      { headers: { "X-Shopify-Access-Token": accessToken } }
-    );
-    const redirectUrl = `${baseUrl}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
-
+    // await axios.post(
+    //   `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/script_tags.json`,
+    //   {
+    //     script_tag: {
+    //       event: "onload",
+    //       src: `${process.env.URL}/upsell.js?shop=${cleanedShop}`
+    //     }
+    //   },
+    //   { headers: { "X-Shopify-Access-Token": accessToken } }
+    // );
+    const redirectUrl = `${baseUrl}/dashboard?shop=${cleanedShop}`;
     return res.redirect(redirectUrl);
+    ;
   } catch (err) {
     console.error('OAuth error:', err.response?.data || err.message);
     res.status(500).send('OAuth process failed.');
@@ -226,7 +227,7 @@ app.get('/seed-products', async (req, res) => {
   res.send('Dummy products inserted.');
 });
 
-app.get('/sync-products', verifySessionToken, async (req, res) => {
+app.get('/sync-products', async (req, res) => {
   const shopDomain = req.shop;
   const [[installed]] = await db.execute(
     'SELECT access_token FROM installed_shops WHERE shop = ? LIMIT 1',
@@ -363,7 +364,7 @@ app.get('/sync-products', verifySessionToken, async (req, res) => {
   return res.send(`Finished syncing ${rows.length} products.`);
 });
 
-app.get('/fetch-orders', verifySessionToken, async (req, res) => {
+app.get('/fetch-orders', async (req, res) => {
   try {
     const [[installed]] = await db.execute('SELECT shop, access_token FROM installed_shops LIMIT 1');
     console.log('Installed shop record:', installed);
@@ -536,7 +537,7 @@ app.get('/fetch-orders', verifySessionToken, async (req, res) => {
 //   }
 //   res.status(200).send('Received');
 // });
-app.get('/apps/upsell/campaigns', verifySessionToken, async (req, res) => {
+app.get('/apps/upsell/campaigns', async (req, res) => {
   const shop = req.query.shop;
   console.log('[GET /apps/upsell/campaigns] Shop:', shop);
 
@@ -546,7 +547,7 @@ app.get('/apps/upsell/campaigns', verifySessionToken, async (req, res) => {
   res.render('campaigns', { shop, campaigns: rows });
 });
 
-app.post('/apps/upsell/campaigns', verifySessionToken, async (req, res) => {
+app.post('/apps/upsell/campaigns', async (req, res) => {
   const { shop, trigger_product_id, upsell_product_id, headline, description, discount } = req.body;
   console.log('[POST /apps/upsell/campaigns] Form data received:', req.body);
 
