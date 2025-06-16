@@ -195,7 +195,7 @@ app.get('/dashboard', async (req, res) => {
   const { shop } = req.query;
   console.log(shop);
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
-     console.log(count);
+  console.log(count);
   res.render('dashboard', {
     productCount: count,
     shop,
@@ -520,27 +520,27 @@ app.get('/fetch-orders', async (req, res) => {
   }
 });
 
-// app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => {
-//   const shop = req.headers['x-shopify-shop-domain'];
-//   if (shop) {
-//     await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
-//     console.log(`App uninstalled for shop: ${shop}`);
-//   }
-//   res.status(200).send('Received');
-// });
+app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => {
+  const shop = req.headers['x-shopify-shop-domain'];
+  if (shop) {
+    await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
+    console.log(`App uninstalled for shop: ${shop}`);
+  }
+  res.status(200).send('Received');
+});
+// Campaign list page (GET)
 app.get('/apps/upsell/campaigns', async (req, res) => {
-  const shop = req.query.shop;
-  console.log('[GET /apps/upsell/campaigns] Shop:', shop);
+  const { shop } = req.query;
+  if (!shop) return res.status(400).send('Missing shop parameter');
 
   const [rows] = await db.execute("SELECT * FROM upsell_campaigns WHERE shop = ?", [shop]);
-  console.log('[GET /apps/upsell/campaigns] Campaigns fetched:', rows.length);
-
   res.render('campaigns', { shop, campaigns: rows });
 });
 
+// Campaign creation (POST)
 app.post('/apps/upsell/campaigns', async (req, res) => {
   const { shop, trigger_product_id, upsell_product_id, headline, description, discount } = req.body;
-  console.log('[POST /apps/upsell/campaigns] Form data received:', req.body);
+  if (!shop) return res.status(400).send('Missing shop parameter');
 
   await db.execute(
     `INSERT INTO upsell_campaigns
@@ -549,53 +549,40 @@ app.post('/apps/upsell/campaigns', async (req, res) => {
     [shop, trigger_product_id, upsell_product_id, headline, description, discount]
   );
 
-  console.log('[POST /apps/upsell/campaigns] Campaign inserted into DB');
   res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
 });
 
+// Get active config (for frontend upsell injection)
 app.get('/apps/upsell/config', async (req, res) => {
   const { shop } = req.query;
-  console.log('[GET /apps/upsell/config] Shop:', shop);
+  if (!shop) return res.status(400).send('Missing shop parameter');
 
   const [[cfg]] = await db.execute(
     `SELECT * FROM upsell_campaigns WHERE shop = ? AND status = 'active' LIMIT 1`,
     [shop]
   );
-
-  console.log('[GET /apps/upsell/config] Active campaign config:', cfg);
   res.json(cfg || {});
 });
 
+// Accept upsell (adds variant to cart and redirects)
 app.get('/accept-upsell', async (req, res) => {
   const { shop, product_id } = req.query;
-  console.log('[GET /accept-upsell] Params:', req.query);
+  if (!shop || !product_id) return res.status(400).send('Missing shop or product_id');
 
   const [[inst]] = await db.execute("SELECT access_token FROM installed_shops WHERE shop = ?", [shop]);
-  if (!inst) {
-    console.error('[GET /accept-upsell] Shop not found in DB');
-    return res.status(400).send('Shop not found');
-  }
-
-  console.log('[GET /accept-upsell] Access token found');
+  if (!inst) return res.status(400).send('Shop not found');
 
   try {
-    const prod = await axios.get(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/products/${product_id}.json`, {
+    const productRes = await axios.get(`https://${shop}/admin/api/2024-04/products/${product_id}.json`, {
       headers: { "X-Shopify-Access-Token": inst.access_token }
     });
 
-    console.log('[GET /accept-upsell] Product fetched:', prod.data.product.title);
-    const varId = prod.data.product.variants[0].id;
-
-    console.log('[GET /accept-upsell] Variant ID:', varId);
-
-    res.redirect(`https://${shop}/cart/${varId}:1`);
-
-    console.log('[GET /accept-upsell] Added to cart via AJAX');
+    const varId = productRes.data.product.variants[0].id;
+    return res.redirect(`https://${shop}/cart/${varId}:1`);
   } catch (err) {
     console.error('[GET /accept-upsell] Error:', err.response?.data || err.message);
+    return res.status(500).send('Failed to add upsell');
   }
-
-  res.redirect('/apps/upsell/upsell_thank_you?shop=' + shop);
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

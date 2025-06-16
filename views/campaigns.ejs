@@ -1,37 +1,8 @@
 <!DOCTYPE html>
 <html>
-
 <head>
   <title>Upsell Campaigns</title>
   <meta charset="utf-8">
- <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
-<script src="https://unpkg.com/@shopify/app-bridge-utils@3"></script>
-
-  <script>
-    document.addEventListener("DOMContentLoaded", function () {
-      console.log('[AppBridge] DOM loaded');
-
-      const AppBridge = window['app-bridge'];
-      const createApp = AppBridge.default;
-      const actions = AppBridge.actions;
-      const hostParam = new URLSearchParams(window.location.search).get("host");
-
-      console.log('[AppBridge] Host param:', hostParam);
-
-      const app = createApp({
-        apiKey: "<%= process.env.SHOPIFY_API_KEY %>",
-        shopOrigin: "<%= shop %>",
-        host: hostParam,
-        forceRedirect: true
-      });
-
-      const TitleBar = actions.TitleBar;
-      TitleBar.create(app, { title: 'Upsell Campaigns' });
-
-      console.log('[AppBridge] Initialized successfully');
-    });
-  </script>
-
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "San Francisco", Roboto, "Segoe UI", sans-serif;
@@ -44,8 +15,7 @@
       margin-bottom: 30px;
     }
 
-    th,
-    td {
+    th, td {
       padding: 10px;
       border: 1px solid #ddd;
       text-align: left;
@@ -57,8 +27,7 @@
       max-width: 500px;
     }
 
-    input,
-    textarea {
+    input, textarea {
       padding: 8px;
       width: 100%;
     }
@@ -72,10 +41,9 @@
     }
   </style>
 </head>
-
 <body>
 
-  <h1>Upsell Campaigns</h1>
+  <h1>Upsell Campaigns for <%= shop %></h1>
 
   <table>
     <thead>
@@ -89,39 +57,24 @@
       </tr>
     </thead>
     <tbody>
-      <% if (campaigns.length===0) { %>
-        <tr>
-          <td colspan="6">No campaigns found</td>
-        </tr>
-        <% } else { %>
-          <% campaigns.forEach(c=> { %>
-            <tr>
-              <td>
-                <%= c.trigger_product_id %>
-              </td>
-              <td>
-                <%= c.upsell_product_id %>
-              </td>
-              <td>
-                <%= c.headline %>
-              </td>
-              <td>
-                <%= c.description %>
-              </td>
-              <td>
-                <%= c.discount %>
-              </td>
-              <td>
-                <%= c.status %>
-              </td>
-            </tr>
-            <% }) %>
-              <% } %>
+      <% if (campaigns.length === 0) { %>
+        <tr><td colspan="6">No campaigns found</td></tr>
+      <% } else { %>
+        <% campaigns.forEach(c => { %>
+          <tr>
+            <td><%= c.trigger_product_id %></td>
+            <td><%= c.upsell_product_id %></td>
+            <td><%= c.headline %></td>
+            <td><%= c.description %></td>
+            <td><%= c.discount %></td>
+            <td><%= c.status %></td>
+          </tr>
+        <% }) %>
+      <% } %>
     </tbody>
   </table>
 
   <h2>Create New Campaign</h2>
-
   <form method="POST" action="/apps/upsell/campaigns">
     <input type="hidden" name="shop" value="<%= shop %>" />
 
@@ -144,5 +97,4 @@
   </form>
 
 </body>
-
 </html>
