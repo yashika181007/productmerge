@@ -538,45 +538,73 @@ app.get('/fetch-orders', verifySessionToken, async (req, res) => {
 // });
 app.get('/apps/upsell/campaigns', verifySessionToken, async (req, res) => {
   const shop = req.query.shop;
+  console.log('[GET /apps/upsell/campaigns] Shop:', shop);
+
   const [rows] = await db.execute("SELECT * FROM upsell_campaigns WHERE shop = ?", [shop]);
+  console.log('[GET /apps/upsell/campaigns] Campaigns fetched:', rows.length);
+
   res.render('campaigns', { shop, campaigns: rows });
 });
 
 app.post('/apps/upsell/campaigns', verifySessionToken, async (req, res) => {
   const { shop, trigger_product_id, upsell_product_id, headline, description, discount } = req.body;
+  console.log('[POST /apps/upsell/campaigns] Form data received:', req.body);
+
   await db.execute(
     `INSERT INTO upsell_campaigns
      (shop, trigger_product_id, upsell_product_id, headline, description, discount, status)
      VALUES (?, ?, ?, ?, ?, ?, 'active')`,
     [shop, trigger_product_id, upsell_product_id, headline, description, discount]
   );
+
+  console.log('[POST /apps/upsell/campaigns] Campaign inserted into DB');
   res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
 });
 
 app.get('/apps/upsell/config', async (req, res) => {
   const { shop } = req.query;
+  console.log('[GET /apps/upsell/config] Shop:', shop);
+
   const [[cfg]] = await db.execute(
     `SELECT * FROM upsell_campaigns WHERE shop = ? AND status = 'active' LIMIT 1`,
     [shop]
   );
+
+  console.log('[GET /apps/upsell/config] Active campaign config:', cfg);
   res.json(cfg || {});
 });
 
 app.get('/accept-upsell', async (req, res) => {
   const { shop, product_id } = req.query;
+  console.log('[GET /accept-upsell] Params:', req.query);
+
   const [[inst]] = await db.execute("SELECT access_token FROM installed_shops WHERE shop = ?", [shop]);
-  if (!inst) return res.status(400).send('Shop not found');
+  if (!inst) {
+    console.error('[GET /accept-upsell] Shop not found in DB');
+    return res.status(400).send('Shop not found');
+  }
 
-  // Fetch variant ID
-  const prod = await axios.get(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/products/${product_id}.json`, {
-    headers: { "X-Shopify-Access-Token": inst.access_token }
-  });
-  const varId = prod.data.product.variants[0].id;
+  console.log('[GET /accept-upsell] Access token found');
 
-  // Add directly to checkout/cart (use AJAX)
-  await axios.post(`https://${shop}/cart/add.js`, {
-    items: [{ id: varId, quantity: 1 }]
-  });
+  try {
+    const prod = await axios.get(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/products/${product_id}.json`, {
+      headers: { "X-Shopify-Access-Token": inst.access_token }
+    });
+
+    console.log('[GET /accept-upsell] Product fetched:', prod.data.product.title);
+    const varId = prod.data.product.variants[0].id;
+
+    console.log('[GET /accept-upsell] Variant ID:', varId);
+
+    // Attempt to add to cart (client will need to support this in storefront)
+    await axios.post(`https://${shop}/cart/add.js`, {
+      items: [{ id: varId, quantity: 1 }]
+    });
+
+    console.log('[GET /accept-upsell] Added to cart via AJAX');
+  } catch (err) {
+    console.error('[GET /accept-upsell] Error:', err.response?.data || err.message);
+  }
 
   res.redirect('/apps/upsell/upsell_thank_you?shop=' + shop);
 });
