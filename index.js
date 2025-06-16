@@ -39,7 +39,7 @@ app.use((req, res, next) => {
   }
 
   res.setHeader("Content-Security-Policy", `frame-ancestors ${frameAncestors};`);
-    res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Origin", "*");
   next();
 });
 
@@ -596,10 +596,7 @@ app.get('/accept-upsell', async (req, res) => {
 
     console.log('[GET /accept-upsell] Variant ID:', varId);
 
-    // Attempt to add to cart (client will need to support this in storefront)
-    await axios.post(`https://${shop}/cart/add.js`, {
-      items: [{ id: varId, quantity: 1 }]
-    });
+    res.redirect(`https://${shop}/cart/${varId}:1`);
 
     console.log('[GET /accept-upsell] Added to cart via AJAX');
   } catch (err) {
