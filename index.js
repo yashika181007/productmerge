@@ -118,7 +118,7 @@ app.get('/callback', async (req, res) => {
     const accessToken = tokenRes.data.access_token;
 
     const storeInfo = await axios.get(
-      `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/shop.json`,
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/shop.json`,
       { headers: { 'X-Shopify-Access-Token': accessToken } }
     );
 
@@ -193,7 +193,7 @@ app.get('/callback', async (req, res) => {
     const cleanedShop = shopData.myshopify_domain;
     const baseUrl = URL;
     // await axios.post(
-    //   `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/script_tags.json`,
+    //   `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/script_tags.json`,
     //   {
     //     script_tag: {
     //       event: "onload",
@@ -295,7 +295,7 @@ app.get('/sync-products', async (req, res) => {
     };
 
     const createResp = await axios.post(
-      `https://${shopDomain}/admin/api/2025-04/graphql.json`,
+      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
       { query: createProductMutation, variables: createVariables },
       {
         headers: {
@@ -345,7 +345,7 @@ app.get('/sync-products', async (req, res) => {
         };
 
         const variantResp = await axios.post(
-          `https://${shopDomain}/admin/api/2025-04/graphql.json`,
+          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
           { query: variantUpdateMutation, variables: variantVariables },
           {
             headers: {
@@ -384,7 +384,7 @@ app.get('/sync-products', async (req, res) => {
       };
 
       const imageResp = await axios.post(
-        `https://${shopDomain}/admin/api/2025-04/graphql.json`,
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
         { query: imageMutation, variables: imageVariables },
         {
           headers: {
@@ -471,7 +471,7 @@ app.get('/fetch-orders', async (req, res) => {
 
     console.log('Sending GraphQL query to Shopify...');
     const response = await axios.post(
-      `https://${installed.shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/graphql.json`,
+      `https://${installed.shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
       { query: gql },
       { headers: { 'X-Shopify-Access-Token': installed.access_token } }
     );
@@ -580,7 +580,7 @@ app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => 
 
 const fetchProductTitle = async (shop, accessToken, productId) => {
   try {
-    const response = await axios.get(`https://${shop}/admin/api/2025-04/products/${productId}.json`, {
+    const response = await axios.get(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/products/${productId}.json`, {
       headers: {
         'X-Shopify-Access-Token': accessToken
       }
@@ -600,7 +600,7 @@ app.get('/apps/upsell/campaigns', async (req, res) => {
   // Fetch all products from Shopify (simplified, paginated to first 50)
   let products = [];
   try {
-    const response = await axios.get(`https://${shop}/admin/api/2025-04/products.json?limit=50`, {
+    const response = await axios.get(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/products.json?limit=50`, {
       headers: { 'X-Shopify-Access-Token': access_token }
     });
     products = response.data.products.map(p => ({
@@ -655,7 +655,7 @@ app.get('/accept-upsell', async (req, res) => {
   if (!inst) return res.status(400).send('Shop not found');
 
   try {
-    const productRes = await axios.get(`https://${shop}/admin/api/2024-04/products/${product_id}.json`, {
+    const productRes = await axios.get(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/products/${product_id}.json`, {
       headers: { "X-Shopify-Access-Token": inst.access_token }
     });
 
