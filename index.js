@@ -257,45 +257,53 @@ app.get('/sync-products', async (req, res) => {
     `;
     const createVariables = {
       product: {
-        title: product.title || '',
-        descriptionHtml: product.description || '',
+        title: product.title ,
+        descriptionHtml: product.description,
         vendor: 'Seeded Vendor',
-        productType: 'Synced from App'
+        productType: 'Synced from App',
+        variants: [
+          {
+            price: product.price?.toString(),
+            sku: product.sku
+          }
+        ]
       }
     };
-    const createResp = await axios.post(
-      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-      { query: createProductMutation, variables: createVariables },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    const productCreatePayload = createResp.data.data?.productCreate;
-    console.log('productCreate:', JSON.stringify(productCreatePayload, null, 2));
-    if (!productCreatePayload || !productCreatePayload.product) {
-      continue;
-    }
-    const createdProduct = productCreatePayload.product;
-    const variantEdges = createdProduct.variants?.edges;
-    let defaultVariantId = null;
-    if (Array.isArray(variantEdges) && variantEdges.length > 0) {
-      defaultVariantId = variantEdges[0].node?.id || null;
-    }
-    console.log('Default Variant ID:', defaultVariantId);
 
-    if (defaultVariantId) {
-      const variantInput = { id: defaultVariantId };
-      if (product.price != null && !isNaN(product.price)) {
-        variantInput.price = product.price.toString();
+  };
+  const createResp = await axios.post(
+    `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+    { query: createProductMutation, variables: createVariables },
+    {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json'
       }
-      if (product.sku) {
-        variantInput.sku = product.sku;
-      }
-      if (Object.keys(variantInput).length > 1) {
-        const variantUpdateMutation = `
+    }
+  );
+  const productCreatePayload = createResp.data.data?.productCreate;
+  console.log('productCreate:', JSON.stringify(productCreatePayload, null, 2));
+  if (!productCreatePayload || !productCreatePayload.product) {
+    continue;
+  }
+  const createdProduct = productCreatePayload.product;
+  const variantEdges = createdProduct.variants?.edges;
+  let defaultVariantId = null;
+  if (Array.isArray(variantEdges) && variantEdges.length > 0) {
+    defaultVariantId = variantEdges[0].node?.id || null;
+  }
+  console.log('Default Variant ID:', defaultVariantId);
+
+  if (defaultVariantId) {
+    const variantInput = { id: defaultVariantId };
+    if (product.price != null && !isNaN(product.price)) {
+      variantInput.price = product.price.toString();
+    }
+    if (product.sku) {
+      variantInput.sku = product.sku;
+    }
+    if (Object.keys(variantInput).length > 1) {
+      const variantUpdateMutation = `
           mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
             productVariantsBulkUpdate(productId: $productId, variants: $variants) {
               userErrors {
@@ -305,43 +313,15 @@ app.get('/sync-products', async (req, res) => {
             }
           }
         `;
-        const variantVariables = {
-          productId: createdProduct.id,
-          variants: [variantInput]
-        };
-        console.log('Updating variant with:', variantVariables);
-
-        await axios.post(
-          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-          { query: variantUpdateMutation, variables: variantVariables },
-          {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-      }
-    }
-
-    if (product.image_url && product.image_url.startsWith('http')) {
-      const imageMutation = `
-        mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
-          productCreateMedia(productId: $productId, media: $media) {
-            mediaUserErrors {
-              field
-              message
-            }
-          }
-        }
-      `;
-      const imageVariables = {
+      const variantVariables = {
         productId: createdProduct.id,
-        media: [{ originalSource: product.image_url, mediaContentType: 'IMAGE' }]
+        variants: [variantInput]
       };
+      console.log('Updating variant with:', variantVariables);
+
       await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-        { query: imageMutation, variables: imageVariables },
+        { query: variantUpdateMutation, variables: variantVariables },
         {
           headers: {
             'X-Shopify-Access-Token': accessToken,
@@ -351,6 +331,34 @@ app.get('/sync-products', async (req, res) => {
       );
     }
   }
+
+  if (product.image_url && product.image_url.startsWith('http')) {
+    const imageMutation = `
+        mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+          productCreateMedia(productId: $productId, media: $media) {
+            mediaUserErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+    const imageVariables = {
+      productId: createdProduct.id,
+      media: [{ originalSource: product.image_url, mediaContentType: 'IMAGE' }]
+    };
+    await axios.post(
+      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+      { query: imageMutation, variables: imageVariables },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+  }
+}
 
   return res.send(`Finished syncing ${rows.length} products.`);
 });
