@@ -95,26 +95,36 @@
 
   <h2>Create New Campaign</h2>
 
-  <form method="POST" action="/apps/upsell/campaigns">
-    <input type="hidden" name="shop" value="<%= shop %>" />
+<h2>Create New Upsell Campaign</h2>
+<form method="POST" action="/apps/upsell/campaigns">
+  <input type="hidden" name="shop" value="<%= shop %>">
 
-    <label>Trigger Product ID</label>
-    <input type="text" name="trigger_product_id" required />
+  <label>Trigger Product:</label>
+  <select name="trigger_product_id" required>
+    <% products.forEach(product => { %>
+      <option value="<%= product.id %>"><%= product.title %></option>
+    <% }) %>
+  </select>
 
-    <label>Upsell Product ID</label>
-    <input type="text" name="upsell_product_id" required />
+  <label>Upsell Product:</label>
+  <select name="upsell_product_id" required>
+    <% products.forEach(product => { %>
+      <option value="<%= product.id %>"><%= product.title %></option>
+    <% }) %>
+  </select>
 
-    <label>Headline</label>
-    <input type="text" name="headline" required />
+  <label>Headline:</label>
+  <input type="text" name="headline" required>
 
-    <label>Description</label>
-    <textarea name="description" rows="3" required></textarea>
+  <label>Description:</label>
+  <textarea name="description" required></textarea>
 
-    <label>Discount (in currency, e.g. 10.00)</label>
-    <input type="number" name="discount" step="0.01" required />
+  <label>Discount (%):</label>
+  <input type="number" name="discount" min="0" max="100" required>
 
-    <button type="submit">Create Campaign</button>
-  </form>
+  <button type="submit">Create Campaign</button>
+</form>
+
 
 </body>
 
