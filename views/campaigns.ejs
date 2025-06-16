@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Upsell Campaigns</title>
+  <meta charset="utf-8">
+  <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+  <script>
+    const AppBridge = window['app-bridge'];
+    const createApp = AppBridge.default;
+    const actions = AppBridge.actions;
+    const app = createApp({
+      apiKey: "<%= process.env.SHOPIFY_API_KEY %>",
+      shopOrigin: "<%= shop %>",
+      host: new URLSearchParams(window.location.search).get("host"),
+      forceRedirect: true
+    });
+
+    const TitleBar = actions.TitleBar;
+    TitleBar.create(app, {
+      title: 'Upsell Campaigns'
+    });
+  </script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "San Francisco", Roboto, "Segoe UI", sans-serif;
+      margin: 40px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    form {
+      display: grid;
+      gap: 10px;
+      max-width: 500px;
+    }
+    input, textarea {
+      padding: 8px;
+      width: 100%;
+    }
+    button {
+      background: #5c6ac4;
+      color: white;
+      border: none;
+      padding: 10px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Upsell Campaigns</h1>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Trigger Product</th>
+        <th>Upsell Product</th>
+        <th>Headline</th>
+        <th>Description</th>
+        <th>Discount</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (campaigns.length === 0) { %>
+        <tr><td colspan="6">No campaigns found</td></tr>
+      <% } else { %>
+        <% campaigns.forEach(c => { %>
+          <tr>
+            <td><%= c.trigger_product_id %></td>
+            <td><%= c.upsell_product_id %></td>
+            <td><%= c.headline %></td>
+            <td><%= c.description %></td>
+            <td><%= c.discount %></td>
+            <td><%= c.status %></td>
+          </tr>
+        <% }) %>
+      <% } %>
+    </tbody>
+  </table>
+
+  <h2>Create New Campaign</h2>
+
+  <form method="POST" action="/apps/upsell/campaigns">
+    <input type="hidden" name="shop" value="<%= shop %>" />
+    
+    <label>Trigger Product ID</label>
+    <input type="text" name="trigger_product_id" required />
+
+    <label>Upsell Product ID</label>
+    <input type="text" name="upsell_product_id" required />
+
+    <label>Headline</label>
+    <input type="text" name="headline" required />
+
+    <label>Description</label>
+    <textarea name="description" rows="3" required></textarea>
+
+    <label>Discount (in currency, e.g. 10.00)</label>
+    <input type="number" name="discount" step="0.01" required />
+
+    <button type="submit">Create Campaign</button>
+  </form>
+
+</body>
+</html>

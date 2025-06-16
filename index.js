@@ -6,6 +6,7 @@ const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const qs = require('qs');
 const path = require('path');
+const db = require('./db');
 // Middlewares
 const verifySessionToken = require('./middleware/verifySessionToken');
 const verifyShopifyWebhook = require('./middleware/verifyShopifyWebhook');
@@ -16,13 +17,6 @@ const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET;
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION;
 const URL = process.env.URL;
-
-const db = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  database: process.env.DB_NAME
-});
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -176,6 +170,16 @@ app.get('/callback', async (req, res) => {
     });
     const cleanedShop = shopData.myshopify_domain;
     const baseUrl = URL;
+    await axios.post(
+      `https://${shop}/admin/api/${process.env.SHOPIFY_API_VERSION}/script_tags.json`,
+      {
+        script_tag: {
+          event: "onload",
+          src: `${process.env.URL}/upsell.js?shop=${cleanedShop}`
+        }
+      },
+      { headers: { "X-Shopify-Access-Token": accessToken } }
+    );
     const redirectUrl = `${baseUrl}/apps/shipping-owl?host=${host}&shop=${cleanedShop}`;
 
     return res.redirect(redirectUrl);
@@ -531,5 +535,49 @@ app.get('/fetch-orders', verifySessionToken, async (req, res) => {
 //   }
 //   res.status(200).send('Received');
 // });
+app.get('/apps/upsell/campaigns', verifySessionToken, async (req, res) => {
+  const shop = req.query.shop;
+  const [rows] = await db.execute("SELECT * FROM upsell_campaigns WHERE shop = ?", [shop]);
+  res.render('campaigns', { shop, campaigns: rows });
+});
+
+app.post('/apps/upsell/campaigns', verifySessionToken, async (req, res) => {
+  const { shop, trigger_product_id, upsell_product_id, headline, description, discount } = req.body;
+  await db.execute(
+    `INSERT INTO upsell_campaigns
+     (shop, trigger_product_id, upsell_product_id, headline, description, discount, status)
+     VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+    [shop, trigger_product_id, upsell_product_id, headline, description, discount]
+  );
+  res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
+});
+
+app.get('/apps/upsell/config', async (req, res) => {
+  const { shop } = req.query;
+  const [[cfg]] = await db.execute(
+    `SELECT * FROM upsell_campaigns WHERE shop = ? AND status = 'active' LIMIT 1`,
+    [shop]
+  );
+  res.json(cfg || {});
+});
+
+app.get('/accept-upsell', async (req, res) => {
+  const { shop, product_id } = req.query;
+  const [[inst]] = await db.execute("SELECT access_token FROM installed_shops WHERE shop = ?", [shop]);
+  if (!inst) return res.status(400).send('Shop not found');
+
+  // Fetch variant ID
+  const prod = await axios.get(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/products/${product_id}.json`, {
+    headers: { "X-Shopify-Access-Token": inst.access_token }
+  });
+  const varId = prod.data.product.variants[0].id;
+
+  // Add directly to checkout/cart (use AJAX)
+  await axios.post(`https://${shop}/cart/add.js`, {
+    items: [{ id: varId, quantity: 1 }]
+  });
+
+  res.redirect('/apps/upsell/upsell_thank_you?shop=' + shop);
+});
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
