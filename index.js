@@ -166,6 +166,7 @@ app.get('/callback', async (req, res) => {
       ]
     );
     req.session.shop = shop;
+    console.log('session',req.session.shop)
     await axios.post(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
       query: `mutation {
                 webhookSubscriptionCreate(
