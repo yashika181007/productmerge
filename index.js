@@ -193,16 +193,6 @@ app.get('/callback', async (req, res) => {
     });
     const cleanedShop = shopData.myshopify_domain;
     const baseUrl = URL;
-    // await axios.post(
-    //   `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/script_tags.json`,
-    //   {
-    //     script_tag: {
-    //       event: "onload",
-    //       src: `${process.env.URL}/upsell.js?shop=${cleanedShop}`
-    //     }
-    //   },
-    //   { headers: { "X-Shopify-Access-Token": accessToken } }
-    // );
     const redirectUrl = `${baseUrl}/dashboard?shop=${cleanedShop}`;
     return res.redirect(redirectUrl);
     ;
@@ -573,6 +563,7 @@ app.get('/apps/upsell/campaigns', async (req, res) => {
   const products = await fetchAllProductTitles(shop, access_token);
   res.render('campaigns', { shop, campaigns: rows, products });
 });
+
 app.post('/apps/upsell/campaigns', async (req, res) => {
   const { trigger_product_id, upsell_product_id, headline, description, discount, shop } = req.body;
 
@@ -663,7 +654,6 @@ app.post('/apps/upsell/campaigns/edit', async (req, res) => {
   res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
 });
 
-// POST: Delete
 app.post('/apps/upsell/campaigns/delete', async (req, res) => {
   const { id, shop } = req.body;
   await db.execute("DELETE FROM upsell_campaigns WHERE id = ?", [id]);
