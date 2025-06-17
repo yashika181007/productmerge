@@ -630,29 +630,19 @@ const fetchProductTitle = async (shop, accessToken, productId) => {
 app.get('/apps/upsell/campaigns', async (req, res) => {
   const { shop } = req.query;
   const [rows] = await db.execute("SELECT * FROM upsell_campaigns WHERE shop = ?", [shop]);
-  const [[{ access_token }]] = await db.execute("SELECT access_token FROM installed_shops WHERE shop = ?", [shop]);
 
-  // Fetch products using GraphQL
-  const products = await fetchAllProductTitles(shop, access_token);
-
-  // Fetch titles for each campaign
-  for (let row of rows) {
-    row.trigger_product_title = await fetchProductTitle(shop, access_token, row.trigger_product_id);
-    row.upsell_product_title = await fetchProductTitle(shop, access_token, row.upsell_product_id);
-  }
-
-  res.render('campaigns', { shop, campaigns: rows, products });
+  res.render('campaigns', { shop, campaigns: rows});
 });
 
 app.post('/apps/upsell/campaigns', async (req, res) => {
-  const { shop, trigger_product_id, upsell_product_id, headline, description, discount } = req.body;
+  const { shop, trigger_product_id,trigger_product_title, upsell_product_id,upsell_product_title, headline, description, discount } = req.body;
   if (!shop) return res.status(400).send('Missing shop parameter');
 
   await db.execute(
     `INSERT INTO upsell_campaigns
-     (shop, trigger_product_id, upsell_product_id, headline, description, discount, status)
+     (shop, trigger_product_id,trigger_product_title, upsell_product_id,upsell_product_title, headline, description, discount, status)
      VALUES (?, ?, ?, ?, ?, ?, 'active')`,
-    [shop, trigger_product_id, upsell_product_id, headline, description, discount]
+    [shop, trigger_product_id,trigger_product_title, upsell_product_id,upsell_product_title, headline, description, discount]
   );
 
   res.redirect(`/apps/upsell/campaigns?shop=${shop}`);

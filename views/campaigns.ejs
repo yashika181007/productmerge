@@ -66,64 +66,82 @@
       </tr>
     </thead>
     <tbody>
-      <% if (campaigns.length === 0) { %>
+      <% if (campaigns.length===0) { %>
         <tr>
           <td colspan="6">No campaigns found.</td>
         </tr>
-      <% } else { %>
-        <% campaigns.forEach(c => { %>
-          <tr>
-            <td><%= c.trigger_product_title %> (<%= c.trigger_product_id %>)</td>
-            <td><%= c.upsell_product_title %> (<%= c.upsell_product_id %>)</td>
-            <td><%= c.headline %></td>
-            <td><%= c.description %></td>
-            <td><%= c.discount %></td>
-            <td>
-              <%= c.status %><br />
-              <a href="/apps/upsell/campaigns/edit?id=<%= c.id %>&shop=<%= shop %>">Edit</a> |
-              <form method="POST" action="/apps/upsell/campaigns/delete" style="display:inline;">
-                <input type="hidden" name="id" value="<%= c.id %>">
-                <input type="hidden" name="shop" value="<%= shop %>">
-                <button type="submit" onclick="return confirm('Are you sure you want to delete this campaign?')">Delete</button>
-              </form>
-            </td>
-          </tr>
-        <% }) %>
-      <% } %>
+        <% } else { %>
+          <% campaigns.forEach(c=> { %>
+            <tr>
+              <td>
+                <%= c.trigger_product_title %> (<%= c.trigger_product_id %>)
+              </td>
+              <td>
+                <%= c.upsell_product_title %>(<%= c.upsell_product_id %>)
+              </td>
+              <td>
+                <%= c.headline %>
+              </td>
+              <td>
+                <%= c.description %>
+              </td>
+              <td>
+                <%= c.discount %>
+              </td>
+              <td>
+                <%= c.status %><br />
+                  <a href="/apps/upsell/campaigns/edit?id=<%= c.id %>&shop=<%= shop %>">Edit</a> |
+                  <form method="POST" action="/apps/upsell/campaigns/delete" style="display:inline;">
+                    <input type="hidden" name="id" value="<%= c.id %>">
+                    <input type="hidden" name="shop" value="<%= shop %>">
+                    <button type="submit"
+                      onclick="return confirm('Are you sure you want to delete this campaign?')">Delete</button>
+                  </form>
+              </td>
+            </tr>
+            <% }) %>
+              <% } %>
     </tbody>
   </table>
 
   <h2>Create New Campaign</h2>
 
-<h2>Create New Upsell Campaign</h2>
-<form method="POST" action="/apps/upsell/campaigns">
-  <input type="hidden" name="shop" value="<%= shop %>">
+  <h2>Create New Upsell Campaign</h2>
+  <form method="POST" action="/apps/upsell/campaigns">
+    <input type="hidden" name="shop" value="<%= shop %>">
+    <% products.forEach(product=> { %>
+      <input type="hidden" name="trigger_product_title" value="<%= product.title %>">
+      <input type="hidden" name="upsell_product_title" value="<%= product.title %>">
+      <% }) %>
+        <label>Trigger Product:</label>
+        <select name="trigger_product_id" required>
+          <% products.forEach(product=> { %>
+            <option value="<%= product.id %>">
+              <%= product.title %>
+            </option>
+            <% }) %>
+        </select>
 
-  <label>Trigger Product:</label>
-  <select name="trigger_product_id" required>
-    <% products.forEach(product => { %>
-      <option value="<%= product.id %>"><%= product.title %></option>
-    <% }) %>
-  </select>
+        <label>Upsell Product:</label>
+        <select name="upsell_product_id" required>
+          <% products.forEach(product=> { %>
+            <option value="<%= product.id %>">
+              <%= product.title %>
+            </option>
+            <% }) %>
+        </select>
 
-  <label>Upsell Product:</label>
-  <select name="upsell_product_id" required>
-    <% products.forEach(product => { %>
-      <option value="<%= product.id %>"><%= product.title %></option>
-    <% }) %>
-  </select>
+        <label>Headline:</label>
+        <input type="text" name="headline" required>
 
-  <label>Headline:</label>
-  <input type="text" name="headline" required>
+        <label>Description:</label>
+        <textarea name="description" required></textarea>
 
-  <label>Description:</label>
-  <textarea name="description" required></textarea>
+        <label>Discount (%):</label>
+        <input type="number" name="discount" min="0" max="100" required>
 
-  <label>Discount (%):</label>
-  <input type="number" name="discount" min="0" max="100" required>
-
-  <button type="submit">Create Campaign</button>
-</form>
+        <button type="submit">Create Campaign</button>
+  </form>
 
 
 </body>
