@@ -598,6 +598,27 @@ app.get('/apps/upsell/campaigns', async (req, res) => {
     products
   });
 });
+app.post('/apps/upsell/campaigns', async (req, res) => {
+  const { trigger_product_id, upsell_product_id, headline, description, discount, shop } = req.body;
+
+  const [[{ access_token }]] = await db.execute("SELECT access_token FROM installed_shops WHERE shop = ?", [shop]);
+  const products = await fetchAllProducts(shop, access_token);
+
+  const triggerProduct = products.find(p => p.id === parseInt(trigger_product_id));
+  const upsellProduct = products.find(p => p.id === parseInt(upsell_product_id));
+
+  const trigger_product_title = triggerProduct?.title || '';
+  const upsell_product_title = upsellProduct?.title || '';
+
+  await db.execute(
+    `INSERT INTO upsell_campaigns 
+    (shop, trigger_product_id, trigger_product_title, upsell_product_id, upsell_product_title, headline, description, discount, status) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [shop, trigger_product_id, trigger_product_title, upsell_product_id, upsell_product_title, headline, description, discount, 'active']
+  );
+
+  res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
+});
 
 app.get('/apps/upsell/config', async (req, res) => {
   const { shop } = req.query;
