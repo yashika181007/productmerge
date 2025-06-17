@@ -568,6 +568,39 @@ app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => 
   res.status(200).send('Received');
 });
 
+const fetchAllProductTitles = async (shop, accessToken) => {
+  const query = `
+    {
+      products(first: 50) {
+        edges {
+          node {
+            id
+            title
+          }
+        }
+      }
+    }
+  `;
+  try {
+    const response = await axios.post(
+      `https://${shop}/admin/api/2025-04/graphql.json`,
+      { query },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json',
+        }
+      }
+    );
+    return response.data.data.products.edges.map(edge => ({
+      id: edge.node.id,
+      title: edge.node.title
+    }));
+  } catch (e) {
+    console.error('[Product Fetch Error]:', e.response?.data || e.message);
+    return [];
+  }
+};
 const fetchProductTitle = async (shop, accessToken, productId) => {
   const query = `
     query getProduct($id: ID!) {
@@ -576,11 +609,9 @@ const fetchProductTitle = async (shop, accessToken, productId) => {
       }
     }
   `;
-
   const variables = {
     id: `gid://shopify/Product/${productId}`
   };
-
   try {
     const response = await axios.post(
       `https://${shop}/admin/api/2025-04/graphql.json`,
@@ -588,14 +619,13 @@ const fetchProductTitle = async (shop, accessToken, productId) => {
       {
         headers: {
           'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         }
       }
     );
-
     return response.data.data?.product?.title || 'Unknown';
   } catch (e) {
-    console.error(`[fetchProductTitle] GraphQL error for product ${productId}:`, e.response?.data || e.message);
+    console.error(`[fetchProductTitle] GraphQL error for ${productId}:`, e.response?.data || e.message);
     return 'Unknown';
   }
 };
@@ -605,20 +635,10 @@ app.get('/apps/upsell/campaigns', async (req, res) => {
   const [rows] = await db.execute("SELECT * FROM upsell_campaigns WHERE shop = ?", [shop]);
   const [[{ access_token }]] = await db.execute("SELECT access_token FROM installed_shops WHERE shop = ?", [shop]);
 
-  // Fetch all products from Shopify (simplified, paginated to first 50)
-  let products = [];
-  try {
-    const response = await axios.get(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/products.json?limit=50`, {
-      headers: { 'X-Shopify-Access-Token': access_token }
-    });
-    products = response.data.products.map(p => ({
-      id: p.id,
-      title: p.title
-    }));
-  } catch (e) {
-    console.error('[Product Fetch Error]:', e.response?.data || e.message);
-  }
+  // Fetch products using GraphQL
+  const products = await fetchAllProductTitles(shop, access_token);
 
+  // Fetch titles for each campaign
   for (let row of rows) {
     row.trigger_product_title = await fetchProductTitle(shop, access_token, row.trigger_product_id);
     row.upsell_product_title = await fetchProductTitle(shop, access_token, row.upsell_product_id);
@@ -652,6 +672,41 @@ app.get('/apps/upsell/config', async (req, res) => {
   res.json(cfg || {});
 });
 
+const fetchFirstVariantId = async (shop, accessToken, productId) => {
+  const query = `
+    query getProductVariants($id: ID!) {
+      product(id: $id) {
+        variants(first: 1) {
+          edges {
+            node {
+              id
+            }
+          }
+        }
+      }
+    }
+  `;
+  const variables = {
+    id: `gid://shopify/Product/${productId}`
+  };
+  try {
+    const response = await axios.post(
+      `https://${shop}/admin/api/2025-04/graphql.json`,
+      { query, variables },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    return response.data.data.product.variants.edges[0]?.node?.id.split("/").pop();
+  } catch (e) {
+    console.error('[fetchFirstVariantId] Error:', e.response?.data || e.message);
+    return null;
+  }
+};
+
 app.get('/accept-upsell', async (req, res) => {
   const { shop, product_id } = req.query;
   if (!shop || !product_id) return res.status(400).send('Missing shop or product_id');
@@ -659,17 +714,10 @@ app.get('/accept-upsell', async (req, res) => {
   const [[inst]] = await db.execute("SELECT access_token FROM installed_shops WHERE shop = ?", [shop]);
   if (!inst) return res.status(400).send('Shop not found');
 
-  try {
-    const productRes = await axios.get(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/products/${product_id}.json`, {
-      headers: { "X-Shopify-Access-Token": inst.access_token }
-    });
+  const variantId = await fetchFirstVariantId(shop, inst.access_token, product_id);
+  if (!variantId) return res.status(500).send('Variant not found');
 
-    const varId = productRes.data.product.variants[0].id;
-    return res.redirect(`https://${shop}/cart/${varId}:1`);
-  } catch (err) {
-    console.error('[GET /accept-upsell] Error:', err.response?.data || err.message);
-    return res.status(500).send('Failed to add upsell');
-  }
+  return res.redirect(`https://${shop}/cart/${variantId}:1`);
 });
 
 app.get('/apps/upsell/campaigns/edit', async (req, res) => {
