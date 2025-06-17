@@ -554,30 +554,49 @@ app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => 
   }
   res.status(200).send('Received');
 });
+const fetchAllProducts = async (shop, accessToken) => {
+  const response = await axios.post(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
+    query: `
+      {
+        products(first: 50) {
+          edges {
+            node {
+              id
+              title
+            }
+          }
+        }
+      }
+    `
+  }, {
+    headers: {
+      "X-Shopify-Access-Token": accessToken,
+      "Content-Type": "application/json"
+    }
+  });
+
+  return response.data.data.products.edges.map(edge => {
+    const gid = edge.node.id;
+    return {
+      id: parseInt(gid.split('/').pop()),
+      title: edge.node.title
+    };
+  });
+};
 
 app.get('/apps/upsell/campaigns', async (req, res) => {
   const { shop } = req.query;
-  const [rows] = await db.execute("SELECT * FROM upsell_campaigns WHERE shop = ?", [shop]);
+
+  const [campaignRows] = await db.execute("SELECT * FROM upsell_campaigns WHERE shop = ?", [shop]);
   const [[{ access_token }]] = await db.execute("SELECT access_token FROM installed_shops WHERE shop = ?", [shop]);
 
-  const products = await fetchAllProductTitles(shop, access_token);
-  res.render('campaigns', { shop, campaigns: rows, products });
-});
+  const products = await fetchAllProducts(shop, access_token);
 
-app.post('/apps/upsell/campaigns', async (req, res) => {
-  const { trigger_product_id, upsell_product_id, headline, description, discount, shop } = req.body;
-
-  const triggerProduct = products.find(p => p.id === parseInt(trigger_product_id));
-  const upsellProduct = products.find(p => p.id === parseInt(upsell_product_id));
-
-  const trigger_product_title = triggerProduct?.title || '';
-  const upsell_product_title = upsellProduct?.title || '';
-
-  await db.execute(
-    'INSERT INTO upsell_campaigns (shop, trigger_product_id, trigger_product_title, upsell_product_id, upsell_product_title, headline, description, discount, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [shop, trigger_product_id, trigger_product_title, upsell_product_id, upsell_product_title, headline, description, discount, 'active']
-  );
-  res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
+  res.render('campaigns', {
+    shop,
+    campaigns: campaignRows,
+    products
+  });
 });
 
 app.get('/apps/upsell/config', async (req, res) => {
