@@ -345,7 +345,6 @@ app.get('/sync-products', async (req, res) => {
         console.log(`✅ Variant created for product ID ${productId}`);
       }
 
-      // Step 3: Upload image
       if (product.image_url && product.image_url.startsWith('http')) {
         const imageMutation = `
           mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
@@ -566,75 +565,14 @@ app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => 
   res.status(200).send('Received');
 });
 
-const fetchAllProductTitles = async (shop, accessToken) => {
-  const query = `
-    {
-      products(first: 50) {
-        edges {
-          node {
-            id
-            title
-          }
-        }
-      }
-    }
-  `;
-  try {
-    const response = await axios.post(
-      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-      { query },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json',
-        }
-      }
-    );
-    return response.data.data.products.edges.map(edge => ({
-      id: edge.node.id,
-      title: edge.node.title
-    }));
-  } catch (e) {
-    console.error('[Product Fetch Error]:', e.response?.data || e.message);
-    return [];
-  }
-};
-const fetchProductTitle = async (shop, accessToken, productId) => {
-  const query = `
-    query getProduct($id: ID!) {
-      product(id: $id) {
-        title
-      }
-    }
-  `;
-  const variables = {
-    id: `gid://shopify/Product/${productId}`
-  };
-  try {
-    const response = await axios.post(
-      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-      { query, variables },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json',
-        }
-      }
-    );
-    return response.data.data?.product?.title || 'Unknown';
-  } catch (e) {
-    console.error(`[fetchProductTitle] GraphQL error for ${productId}:`, e.response?.data || e.message);
-    return 'Unknown';
-  }
-};
-
 app.get('/apps/upsell/campaigns', async (req, res) => {
   const { shop } = req.query;
   const [rows] = await db.execute("SELECT * FROM upsell_campaigns WHERE shop = ?", [shop]);
+  const [[{ access_token }]] = await db.execute("SELECT access_token FROM installed_shops WHERE shop = ?", [shop]);
 
-  res.render('campaigns', { shop, campaigns: rows });
+  const products = await fetchAllProductTitles(shop, access_token);
+  res.render('campaigns', { shop, campaigns: rows, products });
 });
-
 app.post('/apps/upsell/campaigns', async (req, res) => {
   const { trigger_product_id, upsell_product_id, headline, description, discount, shop } = req.body;
 
