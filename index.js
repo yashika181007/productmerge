@@ -1,4 +1,5 @@
 require('dotenv').config();
+const mysql = require('mysql2/promise');
 const express = require('express');
 const axios = require('axios');
 const bodyParser = require('body-parser');
