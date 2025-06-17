@@ -569,15 +569,33 @@ app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => 
 });
 
 const fetchProductTitle = async (shop, accessToken, productId) => {
-  try {
-    const response = await axios.get(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/products/${productId}.json`, {
-      headers: {
-        'X-Shopify-Access-Token': accessToken
+  const query = `
+    query getProduct($id: ID!) {
+      product(id: $id) {
+        title
       }
-    });
-    return response.data.product?.title || 'Unknown';
+    }
+  `;
+
+  const variables = {
+    id: `gid://shopify/Product/${productId}`
+  };
+
+  try {
+    const response = await axios.post(
+      `https://${shop}/admin/api/2025-04/graphql.json`,
+      { query, variables },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return response.data.data?.product?.title || 'Unknown';
   } catch (e) {
-    console.error(`[fetchProductTitle] Error for ${productId}:`, e.response?.data || e.message);
+    console.error(`[fetchProductTitle] GraphQL error for product ${productId}:`, e.response?.data || e.message);
     return 'Unknown';
   }
 };
@@ -609,7 +627,6 @@ app.get('/apps/upsell/campaigns', async (req, res) => {
   res.render('campaigns', { shop, campaigns: rows, products });
 });
 
-// Campaign creation (POST)
 app.post('/apps/upsell/campaigns', async (req, res) => {
   const { shop, trigger_product_id, upsell_product_id, headline, description, discount } = req.body;
   if (!shop) return res.status(400).send('Missing shop parameter');
@@ -624,7 +641,6 @@ app.post('/apps/upsell/campaigns', async (req, res) => {
   res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
 });
 
-// Get active config (for frontend upsell injection)
 app.get('/apps/upsell/config', async (req, res) => {
   const { shop } = req.query;
   if (!shop) return res.status(400).send('Missing shop parameter');
@@ -636,7 +652,6 @@ app.get('/apps/upsell/config', async (req, res) => {
   res.json(cfg || {});
 });
 
-// Accept upsell (adds variant to cart and redirects)
 app.get('/accept-upsell', async (req, res) => {
   const { shop, product_id } = req.query;
   if (!shop || !product_id) return res.status(400).send('Missing shop or product_id');
@@ -656,7 +671,7 @@ app.get('/accept-upsell', async (req, res) => {
     return res.status(500).send('Failed to add upsell');
   }
 });
-// GET: Edit form
+
 app.get('/apps/upsell/campaigns/edit', async (req, res) => {
   const { id, shop } = req.query;
   const [[campaign]] = await db.execute("SELECT * FROM upsell_campaigns WHERE id = ?", [id]);
