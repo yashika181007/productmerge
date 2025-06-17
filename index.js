@@ -194,7 +194,10 @@ app.get('/callback', async (req, res) => {
     const cleanedShop = shopData.myshopify_domain;
     const baseUrl = URL;
     const redirectUrl = `${baseUrl}/dashboard?shop=${cleanedShop}`;
-    return res.redirect(redirectUrl);
+    return res.status(200).json({
+      status: true,
+      shopData
+    });
     ;
   } catch (err) {
     console.error('OAuth error:', err.response?.data || err.message);
