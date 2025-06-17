@@ -315,12 +315,15 @@ app.get('/sync-products', async (req, res) => {
 
       // Step 2: Update price & sku via productVariantsBulkUpdate
       if (defaultVariantId) {
+        console.log('defaultVariantId',defaultVariantId);
         const variantInput = {
           id: defaultVariantId
         };
 
         if (product.price != null && !isNaN(product.price)) {
           variantInput.price = product.price.toString();
+            console.log('product.price.toString()',product.price.toString());
+            console.log('variantInput.price',variantInput.price);
         }
 
         if (product.sku) {
