@@ -15,7 +15,7 @@ const { gql, request } = require('graphql-request');
 const verifySessionToken = require('./middleware/verifySessionToken');
 const verifyShopifyWebhook = require('./middleware/verifyShopifyWebhook');
 const mysqlOptions = {
-   host: process.env.DB_HOST,
+  host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
   database: process.env.DB_NAME
@@ -34,11 +34,11 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
   secret: process.env.SESSION_SECRET,
-  store: sessionStore,     
+  store: sessionStore,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production', 
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
   }
 }));
@@ -168,7 +168,7 @@ app.get('/callback', async (req, res) => {
       ]
     );
     req.session.shop = shop;
-    console.log('session',req.session.shop)
+    console.log('session', req.session.shop)
     await axios.post(`https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
       query: `mutation {
                 webhookSubscriptionCreate(
@@ -282,7 +282,8 @@ app.get('/sync-products', async (req, res) => {
           title: product.title || '',
           descriptionHtml: product.description || '',
           vendor: 'Seeded Vendor',
-          productType: 'Synced from App'
+          productType: 'Synced from App',
+          published: true
         }
       };
 
@@ -319,7 +320,8 @@ app.get('/sync-products', async (req, res) => {
 
       const variants = [{
         inventoryItem: {
-          sku: product.PartNumber || product.sku || 'UNKNOWN-SKU'
+          sku: product.PartNumber || product.sku || 'UNKNOWN-SKU',
+          tracked: false
         },
         price: parseFloat(product.CurrentActivePrice || product.price || 0).toFixed(2),
         barcode: product.UPC || null
