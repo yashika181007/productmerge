@@ -236,7 +236,6 @@ app.get('/dashboard', async (req, res) => {
 });
 
 app.get('/seed-products', async (req, res) => {
-
   const baseUrl = URL;
   const dummy = [
     ['SKU-RED-011', 'Red T-Shirt', 'A bright red cotton tee', `${baseUrl}/images/red-tshirt.jpg`, 19.99],
@@ -571,6 +570,7 @@ app.post('/webhooks/app-uninstalled', verifyShopifyWebhook, async (req, res) => 
   const shop = req.headers['x-shopify-shop-domain'];
   if (shop) {
     await db.execute('DELETE FROM installed_shops WHERE shop = ?', [shop]);
+    await db.execute('DELETE FROM upsell_campaigns WHERE shop = ?', [shop]);
     console.log(`App uninstalled for shop: ${shop}`);
   }
   res.status(200).send('Received');
