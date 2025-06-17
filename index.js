@@ -240,146 +240,59 @@ app.get('/seed-products', async (req, res) => {
 });
 
 app.get('/sync-products', async (req, res) => {
-  const shopDomain = "shippingowl.myshopify.com"; // hardcoded for now
-  console.log(shopDomain);
+  const shopDomain = "shippingowl.myshopify.com"; // Hardcoded for now
 
-  const [[installed]] = await db.execute(
-    'SELECT access_token FROM installed_shops WHERE shop = ? LIMIT 1',
-    [shopDomain]
-  );
-  if (!installed || !installed.access_token) {
-    return res.status(400).send('No installed shop found.');
-  }
-  const accessToken = installed.access_token;
-
-  const [rows] = await db.execute('SELECT * FROM products');
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return res.send('No products to sync.');
-  }
-
-  for (const product of rows) {
-    const createProductMutation = `
-      mutation productCreate($input: ProductInput!) {
-        productCreate(input: $input) {
-          product {
-            id
-            variants(first: 1) {
-              edges {
-                node {
-                  id
-                }
-              }
-            }
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `;
-
-    const createVariables = {
-      input: {
-        title: product.title || '',
-        descriptionHtml: product.description || '',
-        vendor: 'Seeded Vendor',
-        productType: 'Synced from App'
-      }
-    };
-
-    const createResp = await axios.post(
-      `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-      { query: createProductMutation, variables: createVariables },
-      {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      }
+  try {
+    const [[installed]] = await db.execute(
+      'SELECT access_token FROM installed_shops WHERE shop = ? LIMIT 1',
+      [shopDomain]
     );
 
-    const productCreatePayload = createResp.data.data?.productCreate;
-    const errors = createResp.data.errors || productCreatePayload?.userErrors;
-    if (errors?.length) {
-      console.error('[Sync Error] productCreate Errors:', errors);
-      continue;
+    if (!installed || !installed.access_token) {
+      return res.status(400).send('No installed shop found.');
     }
 
-    const createdProduct = productCreatePayload.product;
-    const variantEdges = createdProduct.variants?.edges || [];
-    let defaultVariantId = variantEdges[0]?.node?.id || null;
+    const accessToken = installed.access_token;
 
-    if (defaultVariantId) {
-      const variantInput = {
-        id: defaultVariantId
-      };
-
-      if (product.price != null && !isNaN(product.price)) {
-        variantInput.price = product.price.toString();
-      }
-      if (product.sku) {
-        variantInput.sku = product.sku;
-      }
-
-      if (Object.keys(variantInput).length > 1) {
-        const variantUpdateMutation = `
-          mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-              userErrors {
-                field
-                message
-              }
-            }
-          }
-        `;
-        const variantVariables = {
-          productId: createdProduct.id,
-          variants: [variantInput]
-        };
-
-        const variantResp = await axios.post(
-          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-          { query: variantUpdateMutation, variables: variantVariables },
-          {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-
-        const variantErrors = variantResp.data.data?.productVariantsBulkUpdate?.userErrors;
-        if (variantErrors?.length) {
-          console.error('[Sync Error] variant update:', variantErrors);
-        }
-      }
+    const [rows] = await db.execute('SELECT * FROM products');
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.send('No products to sync.');
     }
 
-    if (product.image_url && product.image_url.startsWith('http')) {
-      const imageMutation = `
-        mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
-          productCreateMedia(productId: $productId, media: $media) {
-            mediaUserErrors {
+    for (const product of rows) {
+      // ---- Create Product Mutation with price + sku ----
+      const createProductMutation = `
+        mutation productCreate($input: ProductInput!) {
+          productCreate(input: $input) {
+            product {
+              id
+            }
+            userErrors {
               field
               message
             }
           }
         }
       `;
-      const imageVariables = {
-        productId: createdProduct.id,
-        media: [
-          {
-            originalSource: product.image_url,
-            mediaContentType: 'IMAGE'
-          }
-        ]
+
+      const createVariables = {
+        input: {
+          title: product.title || '',
+          descriptionHtml: product.description || '',
+          vendor: 'Seeded Vendor',
+          productType: 'Synced from App',
+          variants: [
+            {
+              price: product.price?.toString() || "0.00",
+              sku: product.sku || ''
+            }
+          ]
+        }
       };
 
-      const imageResp = await axios.post(
+      const createResp = await axios.post(
         `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-        { query: imageMutation, variables: imageVariables },
+        { query: createProductMutation, variables: createVariables },
         {
           headers: {
             'X-Shopify-Access-Token': accessToken,
@@ -388,14 +301,62 @@ app.get('/sync-products', async (req, res) => {
         }
       );
 
-      const imageErrors = imageResp.data.data?.productCreateMedia?.mediaUserErrors;
-      if (imageErrors?.length) {
-        console.error('[Sync Error] image upload:', imageErrors);
+      const payload = createResp.data.data?.productCreate;
+      const errors = createResp.data.errors || payload?.userErrors;
+
+      if (errors?.length) {
+        console.error('[Sync Error] productCreate Errors:', errors);
+        continue;
+      }
+
+      const createdProductId = payload?.product?.id;
+
+      // ---- Upload Product Image if available ----
+      if (product.image_url && product.image_url.startsWith('http')) {
+        const imageMutation = `
+          mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+            productCreateMedia(productId: $productId, media: $media) {
+              mediaUserErrors {
+                field
+                message
+              }
+            }
+          }
+        `;
+        const imageVariables = {
+          productId: createdProductId,
+          media: [
+            {
+              originalSource: product.image_url,
+              mediaContentType: 'IMAGE'
+            }
+          ]
+        };
+
+        const imageResp = await axios.post(
+          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+          { query: imageMutation, variables: imageVariables },
+          {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const imageErrors = imageResp.data.data?.productCreateMedia?.mediaUserErrors;
+        if (imageErrors?.length) {
+          console.error('[Sync Error] image upload:', imageErrors);
+        }
       }
     }
-  }
 
-  return res.send(`Finished syncing ${rows.length} products.`);
+    return res.send(`✅ Finished syncing ${rows.length} products.`);
+
+  } catch (error) {
+    console.error('❌ Sync Failed:', error);
+    return res.status(500).send('An error occurred while syncing products.');
+  }
 });
 
 app.get('/fetch-orders', async (req, res) => {
