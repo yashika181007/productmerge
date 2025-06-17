@@ -240,7 +240,7 @@ app.get('/seed-products', async (req, res) => {
 });
 
 app.get('/sync-products', async (req, res) => {
-  const shopDomain = "shippingowl.myshopify.com"; 
+  const shopDomain = "shippingowl.myshopify.com"; // Hardcoded for now
 
   try {
     const [[installed]] = await db.execute(
@@ -260,12 +260,19 @@ app.get('/sync-products', async (req, res) => {
     }
 
     for (const product of rows) {
-      // ---- Create Product Mutation with price + sku ----
+      // Step 1: Create product (without variants)
       const createProductMutation = `
         mutation productCreate($input: ProductInput!) {
           productCreate(input: $input) {
             product {
               id
+              variants(first: 1) {
+                edges {
+                  node {
+                    id
+                  }
+                }
+              }
             }
             userErrors {
               field
@@ -280,13 +287,7 @@ app.get('/sync-products', async (req, res) => {
           title: product.title || '',
           descriptionHtml: product.description || '',
           vendor: 'Seeded Vendor',
-          productType: 'Synced from App',
-          variants: [
-            {
-              price: product.price?.toString() || "0.00",
-              sku: product.sku || ''
-            }
-          ]
+          productType: 'Synced from App'
         }
       };
 
@@ -303,15 +304,63 @@ app.get('/sync-products', async (req, res) => {
 
       const payload = createResp.data.data?.productCreate;
       const errors = createResp.data.errors || payload?.userErrors;
-
       if (errors?.length) {
         console.error('[Sync Error] productCreate Errors:', errors);
         continue;
       }
 
-      const createdProductId = payload?.product?.id;
+      const createdProduct = payload.product;
+      const variantEdges = createdProduct.variants?.edges || [];
+      let defaultVariantId = variantEdges[0]?.node?.id || null;
 
-      // ---- Upload Product Image if available ----
+      // Step 2: Update price & sku via productVariantsBulkUpdate
+      if (defaultVariantId) {
+        const variantInput = {
+          id: defaultVariantId
+        };
+
+        if (product.price != null && !isNaN(product.price)) {
+          variantInput.price = product.price.toString();
+        }
+
+        if (product.sku) {
+          variantInput.sku = product.sku;
+        }
+
+        const variantUpdateMutation = `
+          mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `;
+
+        const variantVariables = {
+          productId: createdProduct.id,
+          variants: [variantInput]
+        };
+
+        const variantResp = await axios.post(
+          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+          { query: variantUpdateMutation, variables: variantVariables },
+          {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const variantErrors = variantResp.data.data?.productVariantsBulkUpdate?.userErrors;
+        if (variantErrors?.length) {
+          console.error('[Sync Error] variant update:', variantErrors);
+        }
+      }
+
+      // Step 3: Upload image (if available)
       if (product.image_url && product.image_url.startsWith('http')) {
         const imageMutation = `
           mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
@@ -324,7 +373,7 @@ app.get('/sync-products', async (req, res) => {
           }
         `;
         const imageVariables = {
-          productId: createdProductId,
+          productId: createdProduct.id,
           media: [
             {
               originalSource: product.image_url,
@@ -354,7 +403,7 @@ app.get('/sync-products', async (req, res) => {
     return res.send(`✅ Finished syncing ${rows.length} products.`);
 
   } catch (error) {
-    console.error('❌ Sync Failed:', error);
+    console.error('❌ Sync Failed:', error.message || error);
     return res.status(500).send('An error occurred while syncing products.');
   }
 });
