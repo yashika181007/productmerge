@@ -205,25 +205,24 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-app.get('/dashboard', async (req, res) => {
-  const { shop } = req.query;
+// app.get('/dashboard', async (req, res) => {
+//   const { shop } = req.query;
 
-  if (!shop) {
-    return res.status(400).send('Missing "shop" parameter.');
-  }
+//   if (!shop) {
+//     return res.status(400).send('Missing "shop" parameter.');
+//   }
 
-  const redirectUri = `${URL}/callback`;
+//   const redirectUri = `${URL}/callback`;
 
-  const installUrl = `https://${shop}/admin/oauth/authorize` +
-    `?client_id=${process.env.SHOPIFY_API_KEY}` +
-    `&scope=${encodeURIComponent(process.env.SHOPIFY_SCOPES)}` +
-    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&grant_options[]=per-user`;
+//   const installUrl = `https://${shop}/admin/oauth/authorize` +
+//     `?client_id=${process.env.SHOPIFY_API_KEY}` +
+//     `&scope=${encodeURIComponent(process.env.SHOPIFY_SCOPES)}` +
+//     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+//     `&grant_options[]=per-user`;
 
-  return res.redirect(installUrl);
-});
+//   return res.redirect(installUrl);
+// });
 
-/*
 app.get('/dashboard', async (req, res) => {
   const { shop } = req.query;
   console.log(shop);
@@ -235,7 +234,6 @@ app.get('/dashboard', async (req, res) => {
     SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY
   });
 });
-*/
 
 app.get('/seed-products', async (req, res) => {
 
@@ -253,7 +251,7 @@ app.get('/seed-products', async (req, res) => {
 });
 
 app.get('/sync-products', async (req, res) => {
-  const shopDomain = "shippingowl.myshopify.com"; // Hardcoded for now
+  const shopDomain = "shippingowl.myshopify.com"; 
 
   try {
     const [[installed]] = await db.execute(
