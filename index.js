@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
-const mysql = require('mysql2/promise');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const qs = require('qs');
@@ -11,8 +10,6 @@ const session = require('express-session');
 const MySQLStore = require('express-mysql-session')(session);
 const { gql, request } = require('graphql-request');
 
-// Middlewares
-const verifySessionToken = require('./middleware/verifySessionToken');
 const verifyShopifyWebhook = require('./middleware/verifyShopifyWebhook');
 const mysqlOptions = {
   host: process.env.DB_HOST,
