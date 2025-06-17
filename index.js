@@ -9,6 +9,8 @@ const path = require('path');
 const db = require('./db');
 const session = require('express-session');
 const MySQLStore = require('express-mysql-session')(session);
+const { gql, request } = require('graphql-request');
+
 // Middlewares
 const verifySessionToken = require('./middleware/verifySessionToken');
 const verifyShopifyWebhook = require('./middleware/verifyShopifyWebhook');
@@ -260,19 +262,12 @@ app.get('/sync-products', async (req, res) => {
     }
 
     for (const product of rows) {
-      // Step 1: Create product (without variants)
+      // Step 1: Create the base product
       const createProductMutation = `
         mutation productCreate($input: ProductInput!) {
           productCreate(input: $input) {
             product {
               id
-              variants(first: 1) {
-                edges {
-                  node {
-                    id
-                  }
-                }
-              }
             }
             userErrors {
               field
@@ -302,68 +297,55 @@ app.get('/sync-products', async (req, res) => {
         }
       );
 
-      const payload = createResp.data.data?.productCreate;
-      const errors = createResp.data.errors || payload?.userErrors;
-      if (errors?.length) {
-        console.error('[Sync Error] productCreate Errors:', errors);
+      const productData = createResp.data.data?.productCreate;
+      const createErrors = createResp.data.errors || productData?.userErrors;
+      if (createErrors?.length) {
+        console.error('[Create Error]', createErrors);
         continue;
       }
 
-      const createdProduct = payload.product;
-      const variantEdges = createdProduct.variants?.edges || [];
-      let defaultVariantId = variantEdges[0]?.node?.id || null;
+      const productId = productData.product.id;
 
-      // Step 2: Update price & sku via productVariantsBulkUpdate
-      if (defaultVariantId) {
-        console.log('defaultVariantId',defaultVariantId);
-        const variantInput = {
-          id: defaultVariantId
-        };
-
-        if (product.price != null && !isNaN(product.price)) {
-          variantInput.price = product.price.toString();
-            console.log('product.price.toString()',product.price.toString());
-            console.log('variantInput.price',variantInput.price);
-        }
-
-        if (product.sku) {
-          variantInput.sku = product.sku;
-        }
-
-        const variantUpdateMutation = `
-          mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-              userErrors {
-                field
-                message
-              }
-            }
+      // Step 2: Create variant and replace default using productVariantsBulkCreate
+      const productVariantsBulkCreateMutation = gql`
+        mutation productVariantsBulkCreate($productId: ID!, $strategy: ProductVariantsBulkCreateStrategy, $variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkCreate(productId: $productId, strategy: $strategy, variants: $variants) {
+            product { id }
+            productVariants { id inventoryItem { id } }
+            userErrors { field message }
           }
-        `;
-
-        const variantVariables = {
-          productId: createdProduct.id,
-          variants: [variantInput]
-        };
-
-        const variantResp = await axios.post(
-          `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-          { query: variantUpdateMutation, variables: variantVariables },
-          {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-
-        const variantErrors = variantResp.data.data?.productVariantsBulkUpdate?.userErrors;
-        if (variantErrors?.length) {
-          console.error('[Sync Error] variant update:', variantErrors);
         }
+      `;
+
+      const variants = [{
+        inventoryItem: {
+          sku: product.PartNumber || product.sku || 'UNKNOWN-SKU'
+        },
+        price: parseFloat(product.CurrentActivePrice || product.price || 0).toFixed(2),
+        barcode: product.UPC || null
+      }];
+
+      const variantsResponse = await request(
+        `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        productVariantsBulkCreateMutation,
+        {
+          productId,
+          strategy: 'REMOVE_STANDALONE_VARIANT',
+          variants
+        },
+        {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      );
+
+      if (variantsResponse?.productVariantsBulkCreate?.userErrors?.length > 0) {
+        console.error('[Variant Bulk Create Error]', variantsResponse.productVariantsBulkCreate.userErrors);
+      } else {
+        console.log(`✅ Variant created for product ID ${productId}`);
       }
 
-      // Step 3: Upload image (if available)
+      // Step 3: Upload image
       if (product.image_url && product.image_url.startsWith('http')) {
         const imageMutation = `
           mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
@@ -376,7 +358,7 @@ app.get('/sync-products', async (req, res) => {
           }
         `;
         const imageVariables = {
-          productId: createdProduct.id,
+          productId,
           media: [
             {
               originalSource: product.image_url,
@@ -398,13 +380,12 @@ app.get('/sync-products', async (req, res) => {
 
         const imageErrors = imageResp.data.data?.productCreateMedia?.mediaUserErrors;
         if (imageErrors?.length) {
-          console.error('[Sync Error] image upload:', imageErrors);
+          console.error('[Image Upload Error]', imageErrors);
         }
       }
     }
 
     return res.send(`✅ Finished syncing ${rows.length} products.`);
-
   } catch (error) {
     console.error('❌ Sync Failed:', error.message || error);
     return res.status(500).send('An error occurred while syncing products.');
