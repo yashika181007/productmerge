@@ -632,20 +632,22 @@ app.get('/apps/upsell/campaigns', async (req, res) => {
   const { shop } = req.query;
   const [rows] = await db.execute("SELECT * FROM upsell_campaigns WHERE shop = ?", [shop]);
 
-  res.render('campaigns', { shop, campaigns: rows});
+  res.render('campaigns', { shop, campaigns: rows });
 });
 
 app.post('/apps/upsell/campaigns', async (req, res) => {
-  const { shop, trigger_product_id,trigger_product_title, upsell_product_id,upsell_product_title, headline, description, discount } = req.body;
-  if (!shop) return res.status(400).send('Missing shop parameter');
+  const { trigger_product_id, upsell_product_id, headline, description, discount, shop } = req.body;
+
+  const triggerProduct = products.find(p => p.id === parseInt(trigger_product_id));
+  const upsellProduct = products.find(p => p.id === parseInt(upsell_product_id));
+
+  const trigger_product_title = triggerProduct?.title || '';
+  const upsell_product_title = upsellProduct?.title || '';
 
   await db.execute(
-    `INSERT INTO upsell_campaigns
-     (shop, trigger_product_id,trigger_product_title, upsell_product_id,upsell_product_title, headline, description, discount, status)
-     VALUES (?, ?, ?, ?, ?, ?, 'active')`,
-    [shop, trigger_product_id,trigger_product_title, upsell_product_id,upsell_product_title, headline, description, discount]
+    'INSERT INTO upsell_campaigns (shop, trigger_product_id, trigger_product_title, upsell_product_id, upsell_product_title, headline, description, discount, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [shop, trigger_product_id, trigger_product_title, upsell_product_id, upsell_product_title, headline, description, discount, 'active']
   );
-
   res.redirect(`/apps/upsell/campaigns?shop=${shop}`);
 });
 

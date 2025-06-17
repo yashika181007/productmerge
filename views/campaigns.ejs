@@ -108,40 +108,34 @@
 
   <h2>Create New Upsell Campaign</h2>
   <form method="POST" action="/apps/upsell/campaigns">
-    <input type="hidden" name="shop" value="<%= shop %>">
-    <% products.forEach(product=> { %>
-      <input type="hidden" name="trigger_product_title" value="<%= product.title %>">
-      <input type="hidden" name="upsell_product_title" value="<%= product.title %>">
-      <% }) %>
-        <label>Trigger Product:</label>
-        <select name="trigger_product_id" required>
-          <% products.forEach(product=> { %>
-            <option value="<%= product.id %>">
-              <%= product.title %>
-            </option>
-            <% }) %>
-        </select>
+  <input type="hidden" name="shop" value="<%= shop %>">
 
-        <label>Upsell Product:</label>
-        <select name="upsell_product_id" required>
-          <% products.forEach(product=> { %>
-            <option value="<%= product.id %>">
-              <%= product.title %>
-            </option>
-            <% }) %>
-        </select>
+  <label>Trigger Product:</label>
+  <select name="trigger_product_id" required>
+    <% products.forEach(product => { %>
+      <option value="<%= product.id %>"><%= product.title %></option>
+    <% }) %>
+  </select>
 
-        <label>Headline:</label>
-        <input type="text" name="headline" required>
+  <label>Upsell Product:</label>
+  <select name="upsell_product_id" required>
+    <% products.forEach(product => { %>
+      <option value="<%= product.id %>"><%= product.title %></option>
+    <% }) %>
+  </select>
 
-        <label>Description:</label>
-        <textarea name="description" required></textarea>
+  <label>Headline:</label>
+  <input type="text" name="headline" required>
 
-        <label>Discount (%):</label>
-        <input type="number" name="discount" min="0" max="100" required>
+  <label>Description:</label>
+  <textarea name="description" required></textarea>
 
-        <button type="submit">Create Campaign</button>
-  </form>
+  <label>Discount (%):</label>
+  <input type="number" name="discount" min="0" max="100" required>
+
+  <button type="submit">Create Campaign</button>
+</form>
+
 
 
 </body>
