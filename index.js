@@ -78,9 +78,9 @@ app.get('/', (req, res) => {
 });
 
 app.get('/callback', async (req, res) => {
-  const { shop, code, hmac, host, timestamp } = req.query;
+  const { shop, hmac, host, timestamp } = req.query;
 
-  if (!shop || !code || !hmac || !host || !timestamp) {
+  if (!shop || !hmac || !host || !timestamp) {
     return res.send('Missing parameters.');
   }
 
@@ -109,8 +109,7 @@ app.get('/callback', async (req, res) => {
       `https://${shop}/admin/oauth/access_token`,
       qs.stringify({
         client_id: process.env.SHOPIFY_API_KEY,
-        client_secret: process.env.SHOPIFY_API_SECRET,
-        code
+        client_secret: process.env.SHOPIFY_API_SECRET
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
@@ -203,6 +202,63 @@ app.get('/callback', async (req, res) => {
 });
 
 app.get('/dashboard', async (req, res) => {
+  const { shop, hmac, host, timestamp } = req.query;
+
+  if (!shop || !hmac || !host || !timestamp) {
+    return res.send('Missing parameters.');
+  }
+
+  const params = { ...req.query };
+  delete params['hmac'];
+  delete params['signature'];
+
+  const sortedParams = Object.keys(params)
+    .sort()
+    .map(key => `${key}=${Array.isArray(params[key]) ? params[key].join(',') : params[key]}`)
+    .join('&');
+
+  const generatedHash = crypto
+    .createHmac('sha256', SHOPIFY_API_SECRET)
+    .update(sortedParams)
+    .digest('hex');
+
+  if (generatedHash !== hmac) {
+    console.warn('Expected HMAC:', generatedHash);
+    console.warn('Received HMAC:', hmac);
+    return res.send('HMAC validation failed.');
+  }
+
+  try {
+    const tokenRes = await axios.post(
+      `https://${shop}/admin/oauth/access_token`,
+      qs.stringify({
+        client_id: process.env.SHOPIFY_API_KEY,
+        client_secret: process.env.SHOPIFY_API_SECRET
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+
+    const accessToken = tokenRes.data.access_token;
+
+    const storeInfo = await axios.get(
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/shop.json`,
+      { headers: { 'X-Shopify-Access-Token': accessToken } }
+    );
+
+    const shopData = storeInfo.data.shop;
+
+    return res.status(200).json({
+      status: true,
+      shopData
+    });
+  } catch (err) {
+    console.error('OAuth error:', err.response?.data || err.message);
+    res.status(500).send('OAuth process failed.');
+  }
+});
+
+/*
+app.get('/dashboard', async (req, res) => {
   const { shop } = req.query;
   console.log(shop);
   const [[{ count }]] = await db.execute('SELECT COUNT(*) AS count FROM products');
@@ -213,6 +269,7 @@ app.get('/dashboard', async (req, res) => {
     SHOPIFY_API_KEY: process.env.SHOPIFY_API_KEY
   });
 });
+*/
 
 app.get('/seed-products', async (req, res) => {
 
