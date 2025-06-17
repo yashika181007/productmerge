@@ -240,7 +240,7 @@ app.get('/seed-products', async (req, res) => {
 });
 
 app.get('/sync-products', async (req, res) => {
-  const shopDomain = "shippingowl.myshopify.com"; // Hardcoded for now
+  const shopDomain = "shippingowl.myshopify.com"; 
 
   try {
     const [[installed]] = await db.execute(
