@@ -583,7 +583,7 @@ const fetchAllProductTitles = async (shop, accessToken) => {
   `;
   try {
     const response = await axios.post(
-      `https://${shop}/admin/api/2025-04/graphql.json`,
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
       { query },
       {
         headers: {
@@ -614,7 +614,7 @@ const fetchProductTitle = async (shop, accessToken, productId) => {
   };
   try {
     const response = await axios.post(
-      `https://${shop}/admin/api/2025-04/graphql.json`,
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
       { query, variables },
       {
         headers: {
@@ -691,7 +691,7 @@ const fetchFirstVariantId = async (shop, accessToken, productId) => {
   };
   try {
     const response = await axios.post(
-      `https://${shop}/admin/api/2025-04/graphql.json`,
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
       { query, variables },
       {
         headers: {
